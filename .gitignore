@@ -1,0 +1,13 @@
+# Local test traces can contain device/session metadata.
+*.log
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.zip
+*.user
+bin/
+obj/
+.vs/
+local-study-notes.md

@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="6" stdDeviation="10" flood-opacity=".14"/></filter>
+    <path id="slice" d="M-87.5-151.6 A175 175 0 0 1 87.5-151.6 L39-67.55 A78 78 0 0 0-39-67.55 Z"/>
+    <path id="fan" d="M-185 0 A185 185 0 0 1-160.2-92.5 L-65.8-38 A76 76 0 0 0-76 0 Z"/>
+    <g id="file"><path d="M-17-23H8L18-13V23H-17Z" fill="white" stroke="#8c9da9" stroke-width="1.5"/><path d="M8-23V-13H18" fill="#e8eef3" stroke="#8c9da9"/><path d="M-12 15L-3 2 3 10 9 5 14 15Z" fill="#70adc9"/></g>
+    <g id="open" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M-14-8H-3L1-4H14V12H-14Z M-14 0H14"/></g>
+    <g id="copy" fill="none" stroke="currentColor" stroke-width="2"><path d="M-5-7H13V14H-5Z M-10 7H-14V-14H4V-10"/></g>
+    <g id="cut" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="-9" cy="-8" r="5"/><circle cx="-9" cy="9" r="5"/><path d="M-5-4L14 15 M-5 5L14-15"/></g>
+    <g id="rename" fill="none" stroke="currentColor" stroke-width="2"><path d="M-14-8H1V12H-14Z M6-14H16 M11-14V15 M6 15H16"/></g>
+    <g id="trash" fill="none" stroke="currentColor" stroke-width="2"><path d="M-14-8H14 M-6-8V-13H6V-8 M-10-8L-8 14H8L10-8 M-3-3V8 M3-3V8"/></g>
+    <g id="more" fill="currentColor"><circle cx="-10" r="2.5"/><circle r="2.5"/><circle cx="10" r="2.5"/></g>
+    <g id="window">
+      <rect width="432" height="510" fill="#e9edf1" stroke="#cbd2d9"/>
+      <rect x="1" y="1" width="430" height="34" fill="#fafafa"/>
+      <text x="15" y="23" font-size="13" fill="#646e77">Проводник · Изображения</text>
+      <rect x="1" y="35" width="430" height="38" fill="#f5f6f7"/>
+      <text x="15" y="60" font-size="12" fill="#7d8790">Файл　 Главная　 Поделиться　 Вид</text>
+      <g opacity=".18"><use href="#file" x="64" y="122"/><use href="#file" x="216" y="122"/><use href="#file" x="368" y="122"/><use href="#file" x="64" y="423"/><use href="#file" x="216" y="423"/><use href="#file" x="368" y="423"/></g>
+    </g>
+  </defs>
+  <rect width="1440" height="900" fill="#f1f3f5"/>
+  <g font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" fill="#232b33">
+    <text x="36" y="54" font-size="32" font-weight="600">Удержать файл. Выбрать действие.</text>
+    <text x="36" y="87" font-size="17" fill="#697580">Три концепта для Windows 10 · только сенсор · обычный ПКМ мышью остаётся прежним</text>
+    <g font-size="22" font-weight="600"><text x="36" y="150">01　КОЛЬЦО</text><text x="504" y="150">02　ВЕЕР</text><text x="972" y="150">03　ПАНЕЛЬ</text></g>
+    <g font-size="16" fill="#697580"><text x="36" y="180">Ближе всего к Filee / Surface Dial</text><text x="504" y="180">Действия выше точки касания</text><text x="972" y="180">Привычная сетка крупных кнопок</text></g>
+    <use href="#window" x="36" y="208"/><use href="#window" x="504" y="208"/><use href="#window" x="972" y="208"/>
+    <g transform="translate(252 473)">
+      <g filter="url(#shadow)" fill="#fcfcfc" stroke="#d0d7de" stroke-width="1.5">
+        <use href="#slice"/><use href="#slice" transform="rotate(60)" fill="#dfedf9" stroke="#0078d4"/>
+        <use href="#slice" transform="rotate(120)"/><use href="#slice" transform="rotate(180)"/><use href="#slice" transform="rotate(240)"/><use href="#slice" transform="rotate(300)"/>
+      </g>
+      <circle r="73" fill="white" stroke="#d2d9df"/>
+      <use href="#file" y="-12"/><text y="38" text-anchor="middle" font-size="14" fill="#697580">Фото.jpg</text>
+      <g text-anchor="middle" font-size="13" color="#35434e">
+        <use href="#open" y="-132"/><text y="-104">Открыть</text>
+        <g color="#0078d4" fill="#0065ad"><use href="#copy" x="111" y="-72"/><text x="111" y="-43">Копировать</text></g>
+        <use href="#cut" x="111" y="51"/><text x="111" y="80">Вырезать</text>
+        <use href="#rename" y="111"/><text y="140">Переимен.</text>
+        <use href="#trash" x="-111" y="51"/><text x="-111" y="80">В корзину</text>
+        <use href="#more" x="-111" y="-72"/><text x="-111" y="-43">Ещё…</text>
+      </g>
+      <text y="212" text-anchor="middle" font-size="14" fill="#697580">Центр — отмена</text>
+    </g>
+    <g transform="translate(720 567)">
+      <g filter="url(#shadow)" fill="#fcfcfc" stroke="#d0d7de" stroke-width="1.3">
+        <use href="#fan"/><use href="#fan" transform="rotate(30)"/><use href="#fan" transform="rotate(60)" fill="#dfedf9" stroke="#0078d4"/><use href="#fan" transform="rotate(90)"/><use href="#fan" transform="rotate(120)"/><use href="#fan" transform="rotate(150)"/>
+      </g>
+      <g text-anchor="middle" font-size="11" color="#35434e">
+        <use href="#open" x="-128" y="-43"/><text x="-128" y="-18">Открыть</text>
+        <use href="#copy" x="-94" y="-103"/><text x="-94" y="-78">Копировать</text>
+        <g color="#0078d4" fill="#0065ad"><use href="#cut" x="-35" y="-140"/><text x="-35" y="-115">Вырезать</text></g>
+        <use href="#rename" x="35" y="-140"/><text x="35" y="-115">Переимен.</text>
+        <use href="#trash" x="94" y="-103"/><text x="94" y="-78">В корзину</text>
+        <use href="#more" x="128" y="-43"/><text x="128" y="-18">Ещё…</text>
+      </g>
+      <circle r="46" fill="white" stroke="#9cc5e3" stroke-width="1.5"/><use href="#file"/>
+      <text y="77" text-anchor="middle" font-size="14" fill="#697580">Фото.jpg</text>
+      <text y="118" text-anchor="middle" font-size="14" fill="#697580">Палец не перекрывает команды</text>
+    </g>
+    <g transform="translate(990 340)">
+      <rect width="396" height="300" fill="#fcfcfc" stroke="#c7d0d8" filter="url(#shadow)"/>
+      <use href="#file" x="33" y="33"/><text x="65" y="28" font-size="17" font-weight="600">Фото.jpg</text><text x="65" y="50" font-size="13" fill="#697580">Выбран 1 файл</text>
+      <path d="M0 70H396 M132 70V300 M264 70V300 M0 185H396" fill="none" stroke="#e1e6eb"/>
+      <rect x="133" y="71" width="130" height="113" fill="#dfedf9" stroke="#0078d4"/>
+      <g text-anchor="middle" font-size="14" color="#35434e">
+        <use href="#open" x="66" y="113"/><text x="66" y="151">Открыть</text>
+        <g color="#0078d4" fill="#0065ad"><use href="#copy" x="198" y="113"/><text x="198" y="151">Копировать</text></g>
+        <use href="#cut" x="330" y="113"/><text x="330" y="151">Вырезать</text>
+        <use href="#rename" x="66" y="230"/><text x="66" y="268">Переимен.</text>
+        <use href="#trash" x="198" y="230"/><text x="198" y="268">В корзину</text>
+        <use href="#more" x="330" y="230"/><text x="330" y="268">Ещё…</text>
+      </g>
+      <text x="198" y="345" text-anchor="middle" font-size="14" fill="#697580">Крупные цели, читаемые подписи</text>
+    </g>
+    <g font-size="16"><text x="36" y="755">+ Быстрый выбор по направлению</text><text x="504" y="755">+ Свободная область над пальцем</text><text x="972" y="755">+ Проще попасть и прочитать</text></g>
+    <g font-size="14" fill="#697580"><text x="36" y="782">− Нужно место вокруг точки вызова</text><text x="504" y="782">− Нужна адаптация у верхнего края</text><text x="972" y="782">− Менее выразительное взаимодействие</text></g>
+    <path d="M36 814H1404" stroke="#d3dbe2"/>
+    <text x="36" y="847" font-size="17">«Ещё…» → полное штатное меню　 ·　 Касание снаружи → закрыть</text>
+    <text x="36" y="878" font-size="13" fill="#77838e">Визуальные эскизы, не работающий интерфейс. Подсветка условная. Размеры и возможности Nilesoft ещё предстоит проверить.</text>
+  </g>
+</svg>
