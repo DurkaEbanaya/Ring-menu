@@ -25,13 +25,7 @@ typedef struct {
     U32 buttonChange;
 } POINTER_INFO;
 typedef struct { U32 device, origin; } SOURCE;
-typedef struct {
-    U32 tick, thread, stage, message;
-    U64 hwnd, extra;
-    U32 sourceDevice, sourceOrigin, id, type, flags, pointerError;
-    I32 x, y;
-    U32 osTime, reserved;
-} EVENT;
+#include "EventQueue.h"
 typedef struct {
     volatile I32 lock;
     U32 magic, active, thread, deadline, read, write, dropped;
@@ -39,6 +33,7 @@ typedef struct {
 #ifdef EXPLORER_BRIDGE
     U64 root, view;
     U32 heartbeat, owned, generation, enabled;
+    U32 diagnosticDropped;
 #endif
 } SHARED;
 _Static_assert(sizeof(MSG) == 48, "MSG x64 ABI");
@@ -73,6 +68,13 @@ static SHARED *shared;
 static U32 lastUpdate;
 static I32 tryLock(volatile I32 *p) { return __sync_val_compare_and_swap(p, 0, 1) == 0; }
 static void unlock(volatile I32 *p) { __sync_lock_release(p); }
+static void diagnosticLoss(SHARED *s) {
+#ifdef EXPLORER_BRIDGE
+    __sync_fetch_and_add(&s->diagnosticDropped, 1);
+#else
+    __sync_fetch_and_add(&s->dropped, 1);
+#endif
+}
 
 static SHARED *connect(void) {
     if (!shared) {
@@ -114,9 +116,8 @@ static void record(U32 stage, PTR hwnd, U32 message, U64 wp, I64 lp, U32 time) {
             e.x = (short)(lp & 0xffff); e.y = (short)((lp >> 16) & 0xffff);
         }
     }
-    if (!tryLock(&s->lock)) { __sync_fetch_and_add(&s->dropped, 1); return; }
-    if (s->write - s->read >= 512) __sync_fetch_and_add(&s->dropped, 1);
-    else { s->events[s->write % 512] = e; s->write++; }
+    if (!tryLock(&s->lock)) { diagnosticLoss(s); return; }
+    if (!queueEvent(s->events, &s->write, s->read, &e, 1)) diagnosticLoss(s);
     unlock(&s->lock);
 }
 

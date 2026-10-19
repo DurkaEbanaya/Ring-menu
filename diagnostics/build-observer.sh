@@ -44,5 +44,8 @@ lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v02.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v03.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v04.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
+lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v05.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 clang -std=c11 -O2 -Wall -Wextra -Werror Test-BridgePolicy.c -o "$build/test-policy"
 "$build/test-policy"
+clang -std=c11 -O2 -Wall -Wextra -Werror Test-EventQueue.c -o "$build/test-queue"
+"$build/test-queue"

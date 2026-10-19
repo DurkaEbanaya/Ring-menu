@@ -17,13 +17,14 @@ internal static class ExplorerRingNative
         internal int X, Y;
         internal uint OsTime, Reserved;
     }
-    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint BeginObservation(uint thread);
-    [DllImport("ExplorerBridge-v04.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
-    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint BridgePulse(uint enabled);
-    [DllImport("ExplorerBridge-v04.dll")] internal static extern void EndObservation();
-    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
-    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern uint BeginObservation(uint thread);
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern uint BridgePulse(uint enabled);
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern void EndObservation();
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v05.dll")] internal static extern uint BridgeDiagnosticDrops();
     [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] internal static extern int GetClassName(IntPtr hwnd, StringBuilder name, int size);
@@ -52,13 +53,15 @@ internal sealed class ExplorerRing : Form
     private IntPtr root;
     private uint dropped, oldDropped, nativeOwned;
     private bool cancelledContact;
+    private uint diagnosticDropped;
+    private string stopReason="";
     private string result = "";
     private ExplorerRename target, pendingRename;
     private DateTime renameAt;
 
     internal ExplorerRing()
     {
-        Text = "Ring menu 0.4 — исправление после перемещения";
+        Text = "Ring menu 0.5 — очередь событий";
         Font = new Font("Segoe UI", 11);
         ClientSize = new Size(880, 540);
         StartPosition = FormStartPosition.CenterScreen;
@@ -84,8 +87,8 @@ internal sealed class ExplorerRing : Form
         stop.Click += delegate { RequestStop("User stop"); }; Controls.Add(stop);
         status.SetBounds(24,440,830,85); status.Text="Не подключено."; Controls.Add(status);
         string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"explorer-ring-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log");
-        log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=true;
-        Write("START version=0.4 dragRecovery=true rename=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
+        log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=false;
+        Write("START version=0.5 queuePriority=true dragRecovery=true rename=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
         overlay=RingLab.CreateOverlay();
         overlay.Selected += delegate(int sector) {
             if(sector==3 && target!=null) { pendingRename=target; renameAt=DateTime.UtcNow.AddMilliseconds(300); result="Ожидается редактор имени…"; }
@@ -102,7 +105,7 @@ internal sealed class ExplorerRing : Form
     private void Write(string s) { log.WriteLine(DateTime.Now.ToString("O")+" "+s); }
     private void Tick(object sender,EventArgs args)
     {
-        try { TickCore(); }
+        try { TickCore(); log.Flush(); }
         catch(Exception e) { Write("ERROR "+e.GetType().Name); RequestStop("Error"); }
     }
     private void TickCore()
@@ -135,7 +138,9 @@ internal sealed class ExplorerRing : Form
         }
         nativeOwned=ExplorerRingNative.BridgePulse(!stopping && foreground && !overlay.OverlayVisible && pendingRename==null ? 1U : 0U);
         Drain();
-        if(dropped!=oldDropped) { oldDropped=dropped; cancelledContact=true; overlay.DismissOverlay("Queue dropped input",true); RequestStop("Queue overflow"); }
+        uint diagnosticNow=ExplorerRingNative.BridgeDiagnosticDrops();
+        if(diagnosticNow!=diagnosticDropped) { diagnosticDropped=diagnosticNow; Write("DIAGNOSTIC_DROPPED count="+diagnosticDropped+" controlLost="+dropped); }
+        if(dropped!=oldDropped) { oldDropped=dropped; cancelledContact=true; overlay.DismissOverlay("Queue dropped input",true); RequestStop("Control event lost"); }
         if(DateTime.UtcNow>=stopAt && !stopping) RequestStop("Three minute timeout");
         if(pendingRename!=null && !stopping && nativeOwned==0 && DateTime.UtcNow>=renameAt) {
             var command=pendingRename; pendingRename=null;
@@ -146,7 +151,7 @@ internal sealed class ExplorerRing : Form
         { cancelledContact=true; overlay.DismissOverlay("Focus/window/20s timeout",true); }
         if(stopping && nativeOwned==0) StopNow("Contact drained");
         else if(stopping && DateTime.UtcNow-stoppingAt>TimeSpan.FromSeconds(2)) StopNow("Forced unhook after 2s; contact may still be down");
-        if(running) status.Text=(stopping ? "Отключение: отпустите палец." : "Подключено. "+result)+"\nПропущено: "+dropped+". Осталось "+Math.Max(0,(int)(stopAt-DateTime.UtcNow).TotalSeconds)+" с.";
+        if(running) status.Text=(stopping ? "Отключение: отпустите палец." : "Подключено. "+result)+"\nПотери управления: "+dropped+"; диагностики: "+diagnosticDropped+". Осталось "+Math.Max(0,(int)(stopAt-DateTime.UtcNow).TotalSeconds)+" с.";
     }
     private void Drain()
     {
@@ -156,7 +161,10 @@ internal sealed class ExplorerRing : Form
             for(int i=0;i<n;i++)
             {
                 var e=events[i];
-                Write("EVENT tick="+e.Tick+" stage="+e.Stage+" msg=0x"+e.Message.ToString("X4")+" hwnd=0x"+e.Hwnd.ToString("X")+
+                // Continuous moves are consumed normally but not formatted or
+                // flushed to disk one by one on the input/UI thread.
+                bool move=(e.Stage==3 && (e.Message==2 || (e.Message==5 && e.Flags==0x200))) || e.Message==0x245;
+                if(!move) Write("EVENT tick="+e.Tick+" stage="+e.Stage+" msg=0x"+e.Message.ToString("X4")+" hwnd=0x"+e.Hwnd.ToString("X")+
                     " class="+ExplorerRingNative.ClassOf(new IntPtr(unchecked((long)e.Hwnd)))+" id="+e.Id+" type="+e.Type+
                     " flags=0x"+e.Flags.ToString("X")+" device="+e.SourceDevice+" origin="+e.SourceOrigin+
                     " extra=0x"+e.Extra.ToString("X")+" x="+e.X+" y="+e.Y+" error="+e.PointerError);
@@ -198,7 +206,7 @@ internal sealed class ExplorerRing : Form
     {
         if(stopped) return;
         Write("STOP_REQUEST "+reason); waiting=false; target=null; pendingRename=null;
-        if(!stopping) stoppingAt=DateTime.UtcNow;
+        if(!stopping) { stoppingAt=DateTime.UtcNow; stopReason=reason; }
         stopping=true;
         overlay.DismissOverlay("Stopping",false); cancelledContact=true;
         nativeOwned=ExplorerRingNative.BridgePulse(0);
@@ -211,8 +219,10 @@ internal sealed class ExplorerRing : Form
         if(running) Drain();
         stopped=true; running=false; waiting=false; timer.Stop();
         arm.Enabled=stop.Enabled=false;
-        Write("STOP "+reason+" dropped="+dropped);
-        status.Text="Отключено. Журнал сохранён. "+result;
+        Write("STOP "+reason+" cause="+stopReason+" controlLost="+dropped+" diagnosticLost="+diagnosticDropped);
+        log.Flush();
+        status.Text="Отключено: "+(stopReason=="Control event lost" ? "защита — потеря события управления" :
+            stopReason=="Three minute timeout" ? "истекли 3 минуты" : stopReason=="User stop" ? "по кнопке остановки" : reason)+".\nЖурнал сохранён. "+result;
     }
     private sealed class SelfTestWindow : Form
     {
@@ -280,6 +290,7 @@ internal sealed class ExplorerRing : Form
                 if(ExplorerRingNative.BeginBridge(thread,unchecked((ulong)h.ToInt64()),unchecked((ulong)h.ToInt64()))!=87)
                     throw new Exception("Same-process bridge target accepted");
                 if(ExplorerRingNative.RetargetBridge(0,0,0)!=87) throw new Exception("Invalid retarget accepted");
+                if(ExplorerRingNative.BridgeDiagnosticDrops()!=0) throw new Exception("Unexpected diagnostic counter");
                 uint error=ExplorerRingNative.BeginObservation(thread);
                 if(error!=0) throw new Exception("Native hooks error="+error);
                 if(ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero)!=new IntPtr(0x1234)) throw new Exception("Changed response");
@@ -293,7 +304,7 @@ internal sealed class ExplorerRing : Form
                 ExplorerRingNative.EndObservation();
                 ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero);
                 if(ExplorerRingNative.DrainObservation(items,128,out lost)!=0) throw new Exception("Events after unhook");
-                File.WriteAllText(path,"PASS v0.4: rename matching/ambiguity/virtual-item/identity guards; invalid retarget rejected; initial/recreated view resolution; reject navigation/other-root/null; bridge DLL load; GET/CALL; shared queue; preserved response; same-process takeover refused; unhook. Events="+n+"\r\n");
+                File.WriteAllText(path,"PASS v0.5: rename matching/ambiguity/virtual-item/identity guards; invalid retarget rejected; initial/recreated view resolution; reject navigation/other-root/null; bridge DLL load; GET/CALL; shared queue; preserved response; same-process takeover refused; unhook. Events="+n+"\r\n");
                 return 0;
             }
         } catch(Exception e) { File.WriteAllText(path,"FAIL: "+e+"\r\n"); return 1; }

@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
-$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v04.exe'))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v05.exe'))
 $flags = [Reflection.BindingFlags]'Instance,NonPublic'
 $static = [Reflection.BindingFlags]'Static,NonPublic'
 $type = $assembly.GetType('RingLab', $true)

@@ -15,6 +15,7 @@ static BRIDGE_POLICY policy;
 static U32 tailUntil, tailId, ownedAt;
 static PTR ownedWindow;
 static U64 policyRoot;
+static U32 lastBridgeMove, lastSuppressedMove;
 EXPORT U64 ResolveBridgeView(U64 root, U64 hwnd) {
     PTR h = (PTR)hwnd;
     if (!root || !h || GetAncestor(h, 2) != (PTR)root) return 0;
@@ -41,13 +42,31 @@ static int liveBridge(SHARED *s, U32 now) {
 }
 static void bridgeEvent(U32 kind, PTR hwnd, U32 id, U32 flags, I32 x, I32 y, U32 now) {
     SHARED *s = shared;
+    /* Coordinates at touch-screen refresh rate suffice for hover. The real
+     * UP position is always sent unthrottled and decides the final selection. */
+    if (kind == 1) lastBridgeMove = now - 16;
+    if (kind == 2 && !(flags & 0x8000)) {
+        if (now - lastBridgeMove < 16) return;
+        lastBridgeMove = now;
+    }
+    int diagnostic = kind == 5 || kind == 6 || kind == 7;
+    if (kind == 5 && flags == 0x200) {
+        if (now - lastSuppressedMove < 60) return;
+        lastSuppressedMove = now;
+    }
+    if (diagnostic) {
+        if (!s) return;
+        if (!tryLock(&s->lock)) { diagnosticLoss(s); return; }
+    } else
     if (!s || !tryLock(&s->lock)) { if (s) __sync_fetch_and_add(&s->dropped, 1); return; }
     EVENT e = {0};
     e.tick = now; e.thread = GetCurrentThreadId(); e.stage = 3;
     e.message = kind; e.hwnd = (U64)hwnd; e.id = id;
     e.type = 2; e.flags = flags; e.x = x; e.y = y;
-    if (s->write - s->read >= 512) __sync_fetch_and_add(&s->dropped, 1);
-    else { s->events[s->write % 512] = e; s->write++; }
+    if (!queueEvent(s->events, &s->write, s->read, &e, diagnostic)) {
+        if (diagnostic) diagnosticLoss(s);
+        else __sync_fetch_and_add(&s->dropped, 1);
+    }
     unlock(&s->lock);
 }
 static void bridgeMessage(MSG *m) {

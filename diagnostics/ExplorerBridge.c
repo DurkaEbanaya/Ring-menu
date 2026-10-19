@@ -18,6 +18,9 @@ EXPORT U32 BridgePulse(U32 enabled) {
     shared->heartbeat = GetTickCount(); shared->enabled = enabled;
     return shared->owned;
 }
+EXPORT U32 BridgeDiagnosticDrops(void) {
+    return shared ? shared->diagnosticDropped : 0;
+}
 /* Retarget only between complete contacts. Keep the original session deadline
  * and exclusive mapping; desktop and folder views can use different threads. */
 EXPORT U32 RetargetBridge(U32 thread, U64 root, U64 view) {
