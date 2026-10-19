@@ -80,11 +80,12 @@ static void bridgeMessage(MSG *m) {
         }
         return;
     }
-    if (msg != 0x246 && msg != 0x245 && msg != 0x247 && msg != 0x24c) return;
+    if (msg != 0x246 && msg != 0x245 && msg != 0x247 && msg != 0x24c && msg != 0x24a) return;
     U32 id = (U32)m->wp & 0xffff;
     POINTER_INFO p = {0};
     int ok = GetPointerInfo(id, &p);
-    if ((!ok || p.type != 2) && !(policy.phase == 2 && id == policy.id)) return;
+    if ((!ok || p.type != 2) && !(id == policy.id && policy.id &&
+        (policy.phase == 2 || (!ok && (msg == 0x24c || msg == 0x24a))))) return;
     if (msg == 0x246) tailUntil = 0;
     if (!ok) { p.pixel = m->pt; p.flags = 0x8000; }
     int eligible = live && withinView(s, m->hwnd) && GetForegroundWindow() == (PTR)s->root;
@@ -108,7 +109,12 @@ static void bridgeMessage(MSG *m) {
     }
     U32 dpi = GetDpiForWindow((PTR)s->root);
     U32 slop = (14 * (dpi ? dpi : 96) + 48) / 96;
+    U32 priorId = policy.id, priorPhase = policy.phase;
     int action = bridgePolicy(&policy, msg, id, p.flags, p.pixel.x, p.pixel.y, now, slop, eligible);
+    if (priorId && priorPhase != 2 &&
+        ((msg == 0x246 && priorId != id && policy.id == id) ||
+         ((msg == 0x24a || msg == 0x24c) && !policy.id)))
+        bridgeEvent(7, m->hwnd, priorId, msg, p.pixel.x, p.pixel.y, now);
     if (action == 1) {
         ownedWindow = m->hwnd; tailId = id; ownedAt = now;
         s->owned = id; s->generation++;
@@ -121,7 +127,10 @@ static void bridgeMessage(MSG *m) {
         /* Secondary contact passes as a complete separate lifecycle. The
          * primary owned contact continues draining without selecting. */
     } else if (action == 2 || action == 3) {
-        bridgeEvent(action == 3 ? 3 : 2, m->hwnd, id, p.flags, p.pixel.x, p.pixel.y, now);
+        /* Missing UP/capture loss finishes draining, never commits a command.
+         * Only the real UP with a noncancelled pointer may select a sector. */
+        U32 flags = p.flags | ((action == 3 && msg != 0x247) ? 0x8000 : 0);
+        bridgeEvent(action == 3 ? 3 : 2, m->hwnd, id, flags, p.pixel.x, p.pixel.y, now);
         if (action == 3) { s->owned = 0; tailUntil = now + 250; }
         m->message = 0; m->wp = 0; m->lp = 0;
     }

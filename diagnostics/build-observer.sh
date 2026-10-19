@@ -43,5 +43,6 @@ clang --target=x86_64-pc-windows-msvc -std=c11 -O2 -Wall -Wextra -Werror -fno-bu
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v02.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v03.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
+lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v04.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 clang -std=c11 -O2 -Wall -Wextra -Werror Test-BridgePolicy.c -o "$build/test-policy"
 "$build/test-policy"

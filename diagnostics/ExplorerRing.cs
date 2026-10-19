@@ -17,13 +17,13 @@ internal static class ExplorerRingNative
         internal int X, Y;
         internal uint OsTime, Reserved;
     }
-    [DllImport("ExplorerBridge-v03.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v03.dll")] internal static extern uint BeginObservation(uint thread);
-    [DllImport("ExplorerBridge-v03.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
-    [DllImport("ExplorerBridge-v03.dll")] internal static extern uint BridgePulse(uint enabled);
-    [DllImport("ExplorerBridge-v03.dll")] internal static extern void EndObservation();
-    [DllImport("ExplorerBridge-v03.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
-    [DllImport("ExplorerBridge-v03.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint BeginObservation(uint thread);
+    [DllImport("ExplorerBridge-v04.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
+    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint BridgePulse(uint enabled);
+    [DllImport("ExplorerBridge-v04.dll")] internal static extern void EndObservation();
+    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
+    [DllImport("ExplorerBridge-v04.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
     [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] internal static extern int GetClassName(IntPtr hwnd, StringBuilder name, int size);
@@ -58,7 +58,7 @@ internal sealed class ExplorerRing : Form
 
     internal ExplorerRing()
     {
-        Text = "Ring menu 0.3 — тест переименования";
+        Text = "Ring menu 0.4 — исправление после перемещения";
         Font = new Font("Segoe UI", 11);
         ClientSize = new Size(880, 540);
         StartPosition = FormStartPosition.CenterScreen;
@@ -85,7 +85,7 @@ internal sealed class ExplorerRing : Form
         status.SetBounds(24,440,830,85); status.Text="Не подключено."; Controls.Add(status);
         string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"explorer-ring-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log");
         log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=true;
-        Write("START version=0.3 rename=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
+        Write("START version=0.4 dragRecovery=true rename=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
         overlay=RingLab.CreateOverlay();
         overlay.Selected += delegate(int sector) {
             if(sector==3 && target!=null) { pendingRename=target; renameAt=DateTime.UtcNow.AddMilliseconds(300); result="Ожидается редактор имени…"; }
@@ -176,6 +176,7 @@ internal sealed class ExplorerRing : Form
                 else if(e.Message==3 && !cancelledContact) overlay.ForwardUp(e.Id,point,(e.Flags&0x8000)!=0);
                 else if(e.Message==4) { cancelledContact=true; overlay.DismissOverlay("Second contact",true); }
                 else if(e.Message==6) Write("VIEW_REBOUND hwnd=0x"+e.Hwnd.ToString("X"));
+                else if(e.Message==7) Write("UNOWNED_CONTACT_RECOVERED id="+e.Id+" reason=0x"+e.Flags.ToString("X"));
             }
         } while(n==events.Length);
     }
@@ -292,7 +293,7 @@ internal sealed class ExplorerRing : Form
                 ExplorerRingNative.EndObservation();
                 ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero);
                 if(ExplorerRingNative.DrainObservation(items,128,out lost)!=0) throw new Exception("Events after unhook");
-                File.WriteAllText(path,"PASS v0.3: rename matching/ambiguity/virtual-item/identity guards; invalid retarget rejected; initial/recreated view resolution; reject navigation/other-root/null; bridge DLL load; GET/CALL; shared queue; preserved response; same-process takeover refused; unhook. Events="+n+"\r\n");
+                File.WriteAllText(path,"PASS v0.4: rename matching/ambiguity/virtual-item/identity guards; invalid retarget rejected; initial/recreated view resolution; reject navigation/other-root/null; bridge DLL load; GET/CALL; shared queue; preserved response; same-process takeover refused; unhook. Events="+n+"\r\n");
                 return 0;
             }
         } catch(Exception e) { File.WriteAllText(path,"FAIL: "+e+"\r\n"); return 1; }
