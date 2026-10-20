@@ -77,7 +77,7 @@ internal sealed class ExplorerRing : Form
 
     internal ExplorerRing()
     {
-        Text = "Ring menu 0.10 — Segoe UI · компактное Ещё";
+        Text = "Ring menu 0.11 — быстрый Reveal · Ещё";
         Font = new Font("Segoe UI", 11);
         ClientSize = new Size(880, 540);
         StartPosition = FormStartPosition.CenterScreen;
@@ -104,16 +104,16 @@ internal sealed class ExplorerRing : Form
         status.SetBounds(24,440,830,85); status.Text="Не подключено."; Controls.Add(status);
         string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"explorer-ring-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log");
         log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=false;
-        Write("START version=0.10 uniformInk=true compactMore=true labelBackings=false holdMs=450 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
+        Write("START version=0.11 cachedRendering=true uniformInk=true compactMore=true labelBackings=false holdMs=450 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
         overlay=RingLab.CreateOverlay();
         overlay.Selected += delegate(int sector) {
             if(sector>=0 && target!=null && target.Enabled[sector]) {
-                pendingCommand=target; pendingSector=sector; commandAt=DateTime.UtcNow.AddMilliseconds(300); result="Ожидается действие Windows…";
+                pendingCommand=target; pendingSector=sector; commandAt=DateTime.UtcNow.AddMilliseconds(sector==5 ? 0 : 300); result="Ожидается действие Windows…";
             } else result="Отменено — действие не выбрано или цель не подтверждена.";
             Write("RESULT sector="+sector+" commandQueued="+(pendingCommand!=null)); target=null;
         };
         overlay.OverlayCancelled += delegate(string why) { cancelledContact=true; target=null; pendingCommand=null; Write("CANCEL "+why); };
-        timer.Interval=20; timer.Tick += Tick;
+        timer.Interval=10; timer.Tick += Tick;
         FormClosing += delegate(object sender,FormClosingEventArgs e) {
             if (running && nativeOwned!=0) { e.Cancel=true; RequestStop("Close deferred until release"); }
         };
@@ -227,7 +227,13 @@ internal sealed class ExplorerRing : Form
                         catch(Exception ex) { cancelledContact=true; target=null; overlay.DismissOverlay("Target/material unavailable",false); Write("TARGET_REFUSED type="+ex.GetType().Name); result="Цель не подтверждена; действие не выполнено."; }
                     }
                     Write("TAKEOVER cleanup=WM_POINTERCAPTURECHANGED experimental=true");
-                } else if(e.Message==2 && !cancelledContact) overlay.ForwardMove(e.Id,point,(e.Flags&0x8000)!=0);
+                } else if(e.Message==2 && !cancelledContact) {
+                    // Render newest adjacent movement, never replay stale frames
+                    // or coalesce across UP/cancel/contact/window boundaries.
+                    while(i+1<n && events[i+1].Stage==3 && events[i+1].Message==2 &&
+                        events[i+1].Id==e.Id && events[i+1].Hwnd==e.Hwnd && (e.Flags&0x8000)==0 && (events[i+1].Flags&0x8000)==0) e=events[++i];
+                    overlay.ForwardMove(e.Id,new Point(e.X,e.Y),(e.Flags&0x8000)!=0);
+                }
                 else if(e.Message==3 && !cancelledContact) overlay.ForwardUp(e.Id,point,(e.Flags&0x8000)!=0);
                 else if(e.Message==4) { cancelledContact=true; overlay.DismissOverlay("Second contact",true); }
                 else if(e.Message==6) Write("VIEW_REBOUND hwnd=0x"+e.Hwnd.ToString("X"));
@@ -369,7 +375,7 @@ internal sealed class ExplorerRing : Form
                 ExplorerRingNative.EndObservation();
                 ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero);
                 if(ExplorerRingNative.DrainObservation(items,128,out lost)!=0) throw new Exception("Events after unhook");
-                File.WriteAllText(path,"PASS v0.10: uniform foreground/luminance; Segoe UI availability; compact variable-height rows; swipe scroll without command; scroll clamping/last item; hidden submenu/back; DIB exact alpha/top-down/premultiplication; local Shell file/background menus without execution; target guards; coordinate packing; unknown verb rejection; invocation/menu state ABI; view resolution; bridge GET/CALL/shared queue/preserved response/submenu telemetry/unhook. Events="+n+"\r\n");
+                File.WriteAllText(path,"PASS v0.11: uniform foreground/luminance; Segoe UI availability; compact variable-height rows; swipe scroll without command; scroll clamping/last item; hidden submenu/back; DIB exact alpha/top-down/premultiplication; local Shell file/background menus without execution; target guards; coordinate packing; unknown verb rejection; invocation/menu state ABI; view resolution; bridge GET/CALL/shared queue/preserved response/submenu telemetry/unhook. Events="+n+"\r\n");
                 return 0;
             }
         } catch(Exception e) { File.WriteAllText(path,"FAIL: "+e+"\r\n"); return 1; }

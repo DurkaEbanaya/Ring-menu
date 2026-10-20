@@ -64,7 +64,6 @@ internal sealed class ShellCommands : IDisposable
         Check(Slot<QueryMenu>(context,3)(context,menu,0,1,0x7fff,0));
         Guid iid=new Guid("BCFCE0A0-EC17-11D0-8D10-00A0C90F2719"); Marshal.QueryInterface(context,ref iid,out context3);
         iid=new Guid("000214F4-0000-0000-C000-000000000046"); Marshal.QueryInterface(context,ref iid,out context2);
-        ReadMenu(menu,0);
     }
     internal ShellCommands(string path,bool background,IntPtr owner)
     {
@@ -96,22 +95,23 @@ internal sealed class ShellCommands : IDisposable
         for(int i=0;i<n;i++) {
             uint id=GetMenuItemID(m,i);
             if(id>=1 && id<0x8000 && (GetMenuState(m,(uint)i,0x400)&3)==0) {
-                IntPtr text=Marshal.AllocHGlobal(512);
-                try {
-                    Marshal.WriteInt16(text,0);
-                    int hr=Slot<CommandString>(context,5)(context,new UIntPtr(id-1),4,IntPtr.Zero,text,256);
-                    if(hr>=0) { string verb=Marshal.PtrToStringUni(text); if(!String.IsNullOrEmpty(verb)) commands[verb]=id-1; }
-                } finally { Marshal.FreeHGlobal(text); }
+                string verb=Verb(id-1); if(!String.IsNullOrEmpty(verb)) commands[verb]=id-1;
             }
             IntPtr sub=GetSubMenu(m,i); if(sub!=IntPtr.Zero) ReadMenu(sub,depth+1);
         }
     }
-    internal bool Has(string verb) { return commands.ContainsKey(verb); }
+    private bool verbsRead;
+    private readonly Dictionary<uint,string> verbs=new Dictionary<uint,string>();
+    private void EnsureVerbs()
+    { if(!verbsRead) { ReadMenu(menu,0); verbsRead=true; } }
+    internal bool Has(string verb) { EnsureVerbs(); return commands.ContainsKey(verb); }
     internal List<Entry> Entries(IntPtr popup,int position)
     {
         int initialized=0;
-        if(context3!=IntPtr.Zero) { IntPtr result; initialized=Slot<MenuMessage2>(context3,7)(context3,0x117,new UIntPtr(unchecked((ulong)popup.ToInt64())),new IntPtr(position),out result); }
-        else if(context2!=IntPtr.Zero) initialized=Slot<MenuMessage>(context2,6)(context2,0x117,new UIntPtr(unchecked((ulong)popup.ToInt64())),new IntPtr(position));
+        // QueryContextMenu has already built the root. Only the submenu the
+        // user actually opens needs lazy initialization.
+        if(popup!=menu && context3!=IntPtr.Zero) { IntPtr result; initialized=Slot<MenuMessage2>(context3,7)(context3,0x117,new UIntPtr(unchecked((ulong)popup.ToInt64())),new IntPtr(position),out result); }
+        else if(popup!=menu && context2!=IntPtr.Zero) initialized=Slot<MenuMessage>(context2,6)(context2,0x117,new UIntPtr(unchecked((ulong)popup.ToInt64())),new IntPtr(position));
         // Some handlers return E_FAIL for the already-built root or for a
         // submenu they do not own. Never invoke an uninitialized lazy entry.
         if(initialized<0 && popup!=menu) {
@@ -140,8 +140,9 @@ internal sealed class ShellCommands : IDisposable
     }
     private string Verb(uint offset)
     {
+        string cached; if(verbs.TryGetValue(offset,out cached)) return cached;
         IntPtr text=Marshal.AllocHGlobal(512);
-        try { Marshal.WriteInt16(text,0); return Slot<CommandString>(context,5)(context,new UIntPtr(offset),4,IntPtr.Zero,text,256)>=0 ? Marshal.PtrToStringUni(text) : null; }
+        try { Marshal.WriteInt16(text,0); cached=Slot<CommandString>(context,5)(context,new UIntPtr(offset),4,IntPtr.Zero,text,256)>=0 ? Marshal.PtrToStringUni(text) : null; verbs[offset]=cached; return cached; }
         finally { Marshal.FreeHGlobal(text); }
     }
     internal void Execute(Entry entry)
@@ -191,6 +192,7 @@ internal sealed class ShellCommands : IDisposable
     }
     internal void Execute(string verb)
     {
+        EnsureVerbs();
         uint id;
         if(!commands.TryGetValue(verb,out id)) throw new InvalidOperationException("Shell command unavailable");
         // Invoke only an enabled command discovered in THIS menu. No localized

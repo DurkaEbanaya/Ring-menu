@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
-$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v010.exe'))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v011.exe'))
 $flags = [Reflection.BindingFlags]'Instance,NonPublic'
 $static = [Reflection.BindingFlags]'Static,NonPublic'
 $type = $assembly.GetType('RingLab', $true)
@@ -88,6 +88,16 @@ try {
     Set-Field 'center' ([Drawing.PointF]::new(320,320))
     Set-Field 'last' ([Drawing.PointF]::new(320,114))
     $null=$form.Handle
+    Invoke-Method 'PresentOverlay' @() | Out-Null
+    $frame=Get-Field 'ringFrame'
+    Assert ($null -ne $frame) 'Persistent frame not allocated'
+    Invoke-Method 'PresentOverlay' @() | Out-Null
+    Assert ([object]::ReferenceEquals($frame,(Get-Field 'ringFrame'))) 'Unchanged frame reallocated'
+    Set-Field 'last' ([Drawing.PointF]::new(350,150))
+    Invoke-Method 'PresentOverlay' @() | Out-Null
+    Assert ([object]::ReferenceEquals($frame,(Get-Field 'ringFrame'))) 'MOVE reallocated frame'
+    Invoke-Method 'ClearRingCache' @() | Out-Null
+    Assert ($null -eq (Get-Field 'ringFrame')) 'Frame cache cleanup failed'
     Invoke-Method 'PresentOverlay' @() | Out-Null
     Assert (-not $form.Visible) 'Layered surface test showed a window'
     Invoke-Method 'Cancel' @('test') | Out-Null

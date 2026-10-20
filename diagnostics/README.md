@@ -20,7 +20,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v010.exe`; положить рядом неизменённую `ExplorerBridge-v09.dll` (0.10 — только UI-исправление).
+- `build-ExplorerRing.ps1`: `ExplorerRing-v011.exe`; положить рядом неизменённую `ExplorerBridge-v09.dll` (0.11 — только UI-исправление).
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -29,7 +29,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v010.exe --self-test
+.\ExplorerRing-v011.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -49,7 +49,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
-### Дополнительно для 0.10
+### Дополнительно для 0.11
+
+- `Measure-Rendering.ps1 -Executable ExplorerRing-v011.exe`: скрытая собственная поверхность 630×630, 30 изменяющихся кадров после warmup, mean/median/p95. Экран не снимается, Explorer не подключается. Затем query меню собственного временного файла три раза, без выполнения команд; файл/папка удаляются. Сравнивать версии в отдельных процессах, учитывая прогрев Shell caches. В одном сеансе 0.10 mean 34.06 / median 33.24 / p95 37.71 мс; 0.11 mean 8.45 / median 8.44 / p95 8.63 мс. Это не физический display/input latency и не обещание 120 FPS.
+- Кэш фона/надписей освобождается при закрытии/смене кольца; DIB/DC переиспользуются. Проверка `Test-ExplorerRing` дополнена повторным кадром/MOVE без reallocation, очисткой/пересозданием кэша. High contrast рисуется целиком, чтобы hover highlight text не застывал. Геометрия, единый цвет, отсутствие подложек и команды сохранены.
+- «Ещё» больше не ждёт 300 мс после release (прежняя задержка других команд сохранена). Выполняется только после nativeOwned==0; цель проверяется заново. Root `QueryContextMenu` не получает повторный INITMENUPOPUP, canonical lookup не обходит дерево в конструкторе. На выбранном submenu INITMENUPOPUP сохранён. Нет кеширования команд между разными целями и нет обхода проверок безопасности.
+- `MORE_TIMING` stage=validatedSelected/contextBuilt/prefixReady — накопленное время после входа в ветку more; entriesLayout/firstPresented — время от создания собственного списка. Содержимое/пути не логируются. Сторонние расширения и UIA/COM всё ещё синхронны; ранние этапы и cold start требуют проверки реальным жестом.
+
+### История 0.10
 
 - Один общий `whiteInk`, не массив цветов секторов. `TestContrast` проверяет black/white выбор и единый foreground на синтетических данных. Настоящий экран тесты не снимают. Segoe UI уже был указан в старом DrawText; теперь alpha-layer renderer явно использует `AntiAliasGridFit`, мелкие подписи кольца увеличены до 11/12 DIP. Текст списка 13 DIP, без ClearType RGB-fringing на прозрачном фоне.
 - Строки 32 DIP, header 32, footer 28, разделители 7, поля 6, ширина 320 DIP. Self-test проверяет компактные hit rows, помещение 25 команд при рабочей высоте ≥900 DIP, короткий separator, swipe без Choice, clamp в обе стороны, достижимость последнего из 100 пунктов, раскрытие/возврат подменю, наличие Segoe UI. Тесты скрытые; реальный touch и визуальное качество требуют ручной проверки.

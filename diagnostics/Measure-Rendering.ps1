@@ -1,0 +1,51 @@
+param([string]$Executable='ExplorerRing-v010.exe',[int]$Frames=30)
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Windows.Forms
+$assembly=[Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot $Executable))
+$type=$assembly.GetType('RingLab',$true)
+$flags=[Reflection.BindingFlags]'Instance,NonPublic'
+$static=[Reflection.BindingFlags]'Static,NonPublic'
+$form=$type.GetMethod('CreateOverlay',$static).Invoke($null,@())
+function Field($name,$value) { $type.GetField($name,$flags).SetValue($form,$value) }
+try {
+    $form.ClientSize=[Drawing.Size]::new(630,630)
+    Field 'scale' ([single]2); Field 'radius' ([single]296); Field 'inner' ([single]116)
+    Field 'center' ([Drawing.PointF]::new(315,315)); Field 'last' ([Drawing.PointF]::new(315,109))
+    Field 'visibleRing' $true; Field 'active' ([uint32]123); Field 'waitInitialUp' $false
+    Field 'materialBlur' $true; Field 'hover' 0
+    $null=$form.Handle
+    $present=$type.GetMethod('PresentOverlay',$flags)
+    for($i=0;$i -lt 3;$i++) { $present.Invoke($form,@()) | Out-Null }
+    $times=@()
+    for($i=0;$i -lt $Frames;$i++) {
+        Field 'last' ([Drawing.PointF]::new(150+($i*11)%300,150+($i*7)%300))
+        $watch=[Diagnostics.Stopwatch]::StartNew()
+        $present.Invoke($form,@()) | Out-Null
+        $times+=$watch.Elapsed.TotalMilliseconds
+    }
+    $sorted=@($times | Sort-Object)
+    'RENDER executable={0} frames={1} meanMs={2:F2} medianMs={3:F2} p95Ms={4:F2} hidden=true' -f $Executable,$Frames,($times | Measure-Object -Average).Average,$sorted[[int]($Frames/2)],$sorted[[int][Math]::Floor(($Frames-1)*.95)]
+    if($form.Visible) { throw 'Benchmark showed a window' }
+    # Query only our own disposable file; never enumerate user files or execute.
+    $path=Join-Path ([IO.Path]::GetTempPath()) ('Ring-menu-perf-'+[Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($path) | Out-Null
+    $file=Join-Path $path 'sample.txt'; [IO.File]::WriteAllText($file,'isolated menu benchmark')
+    try {
+        $shell=$assembly.GetType('ShellCommands',$true)
+        $ctor=$shell.GetConstructor($flags,$null,[type[]]@([string],[bool],[IntPtr]),$null)
+        for($i=0;$i -lt 3;$i++) {
+            $watch=[Diagnostics.Stopwatch]::StartNew()
+            $commands=$ctor.Invoke([object[]]@([string]$file,[bool]$false,[IntPtr]::Zero))
+            $build=$watch.Elapsed.TotalMilliseconds
+            try {
+                $watch.Restart()
+                $popup=$shell.GetProperty('Menu',$flags).GetValue($commands,$null)
+                $entries=$shell.GetMethod('Entries',$flags).Invoke($commands,@($popup,0))
+                'SHELL run={0} buildMs={1:F2} entriesMs={2:F2} count={3}' -f $i,$build,$watch.Elapsed.TotalMilliseconds,$entries.Count
+            } finally { $commands.Dispose() }
+        }
+    } finally { [IO.File]::Delete($file); [IO.Directory]::Delete($path) }
+} finally {
+    $type.GetField('log',$flags).GetValue($form).Dispose()
+    $form.Dispose()
+}

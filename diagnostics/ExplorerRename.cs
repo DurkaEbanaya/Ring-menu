@@ -185,6 +185,7 @@ internal sealed class ExplorerRename
         dynamic doc=Validate();
         string verb=ActionName(sector);
         if(verb=="more") {
+            var menuWatch=System.Diagnostics.Stopwatch.StartNew();
             if(!Background) doc.SelectItem(Match(doc,label),0x1d);
             else {
                 // A blank-area RMB must not show the old selected file's menu.
@@ -193,11 +194,14 @@ internal sealed class ExplorerRename
                 for(int i=count-1;i>=0;i--) doc.SelectItem(selected.Item(i),0);
             }
             ShellCommands menu;
+            Trace("MORE_TIMING stage=validatedSelected ms="+menuWatch.ElapsedMilliseconds);
             try { menu=ViewMenu(); }
             catch(Exception e) { Trace("MORE_CONTEXT_FAILED type="+e.GetType().Name+" hr=0x"+e.HResult.ToString("X8")); ShowOriginalMenu(); return; }
             using(menu) {
+                Trace("MORE_TIMING stage=contextBuilt ms="+menuWatch.ElapsedMilliseconds);
                 menu.Diagnostic=Diagnostic;
                 if(Background) menu.Prefix=BackgroundEntries(doc);
+                Trace("MORE_TIMING stage=prefixReady ms="+menuWatch.ElapsedMilliseconds);
                 Trace("TOUCH_MORE_OPEN context="+(Background ? "background" : "item")+" source=localShell");
                 bool original;
                 var chosen=RingLab.ShowTouchMenu(menu,point,root,out original);

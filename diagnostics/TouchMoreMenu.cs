@@ -18,12 +18,15 @@ internal sealed partial class RingLab
     }
     internal static ShellCommands.Entry ShowTouchMenu(ShellCommands shell,Point point,IntPtr root,out bool original)
     {
+        var watch=System.Diagnostics.Stopwatch.StartNew();
         using(var menu=new TouchMoreMenu(shell,point))
         using(var shield=new OutsideVeil(Screen.FromPoint(point).WorkingArea)) {
+            if(shell.Diagnostic!=null) shell.Diagnostic("MORE_TIMING stage=entriesLayout ms="+watch.ElapsedMilliseconds);
             menu.SampleContrast();
             shield.Touched+=delegate { menu.Close(); };
             shield.MouseUp+=delegate { menu.Close(); };
-            shield.Show(); menu.Show(); menu.Render();
+            shield.Show(); menu.Show();
+            if(shell.Diagnostic!=null) shell.Diagnostic("MORE_TIMING stage=firstPresented ms="+watch.ElapsedMilliseconds);
             DateTime until=DateTime.UtcNow.AddSeconds(30);
             try {
                 while(menu.Visible && DateTime.UtcNow<until && ExplorerRingNative.GetForegroundWindow()==root) {
@@ -37,6 +40,7 @@ internal sealed partial class RingLab
     {
         private readonly ShellCommands shell;
         private readonly RingLab painter;
+        private LayeredFrame frame;
         private AcrylicSurface backdrop;
         private List<ShellCommands.Entry> entries;
         private readonly Stack<Tuple<List<ShellCommands.Entry>,int>> parents=new Stack<Tuple<List<ShellCommands.Entry>,int>>();
@@ -217,7 +221,9 @@ internal sealed partial class RingLab
         internal void Render()
         {
             if(!IsHandleCreated || IsDisposed) return;
-            using(var bitmap=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb)) using(var g=Graphics.FromImage(bitmap)) {
+            if(frame==null || frame.Bitmap.Size!=Size) { if(frame!=null) frame.Dispose(); frame=new LayeredFrame(Width,Height); }
+            var g=frame.Graphics;
+            {
                 g.SmoothingMode=SmoothingMode.AntiAlias; g.TextRenderingHint=TextRenderingHint.AntiAliasGridFit;
                 Color surface=SystemInformation.HighContrast ? SystemColors.Window : painter.darkMaterial ? Color.FromArgb(38,38,38) : Color.FromArgb(243,243,243);
                 Color text=painter.ReadableInk();
@@ -252,7 +258,7 @@ internal sealed partial class RingLab
                 DrawGlyph(g,"\uE8A7",pad+16*dpi,foot+footer/2,text,13);
                 DrawLabel(g,"Штатное меню…",new RectangleF(pad+34*dpi,foot,Width-2*pad-40*dpi,footer),text,12);
                 using(var pen=new Pen(Color.FromArgb(70,text))) g.DrawRectangle(pen,0,0,Width-1,Height-1);
-                PresentBitmap(Handle,Location,bitmap);
+                frame.Present(Handle,Location);
             }
         }
         private void DrawGlyph(Graphics g,string glyph,float x,float y,Color color,float size)
@@ -268,7 +274,7 @@ internal sealed partial class RingLab
         }
         protected override void Dispose(bool disposing)
         {
-            if(disposing) { if(backdrop!=null) { backdrop.Close(); backdrop.Dispose(); backdrop=null; } if(painter!=null) { painter.log.Dispose(); painter.Dispose(); } }
+            if(disposing) { if(frame!=null) { frame.Dispose(); frame=null; } if(backdrop!=null) { backdrop.Close(); backdrop.Dispose(); backdrop=null; } if(painter!=null) { painter.log.Dispose(); painter.Dispose(); } }
             base.Dispose(disposing);
         }
     }

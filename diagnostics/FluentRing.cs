@@ -14,6 +14,21 @@ internal sealed partial class RingLab
     private bool materialBlur, darkMaterial;
     private bool whiteInk;
     private bool contrastReady;
+    private Bitmap ringBase,ringLabels;
+    private LayeredFrame ringFrame;
+    private PointF presentedPoint;
+    private int presentedHover;
+    private uint presentedContact;
+    private bool presentedWait,framePresented;
+    private int renderPass;
+    private void ClearRingCache()
+    {
+        if(ringBase!=null) { ringBase.Dispose(); ringBase=null; }
+        if(ringLabels!=null) { ringLabels.Dispose(); ringLabels=null; }
+        if(ringFrame!=null) { ringFrame.Dispose(); ringFrame=null; }
+        renderPass=0;
+        framePresented=false;
+    }
     // One bounded sample BEFORE any ring/backdrop/veil is visible. Do not
     // resample our own surface, save pixels, or log pixel/colour values.
     private void SampleRingContrast()
@@ -93,15 +108,76 @@ internal sealed partial class RingLab
     }
     private void CloseMaterial()
     {
+        ClearRingCache();
         if(acrylic!=null) { acrylic.Close(); acrylic.Dispose(); acrylic=null; }
         materialBlur=false;
     }
     private void PresentOverlay()
     {
         if(!visibleRing || !IsHandleCreated || Width<=0 || Height<=0) return;
-        using(var bitmap=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb)) {
-            using(var g=Graphics.FromImage(bitmap)) { g.SmoothingMode=SmoothingMode.AntiAlias; g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit; DrawFluentRing(g); }
-            PresentBitmap(Handle,Location,bitmap);
+        if(framePresented && ringFrame!=null && ringFrame.Bitmap.Size==Size && presentedPoint==last &&
+            presentedHover==hover && presentedContact==active && presentedWait==waitInitialUp) return;
+        if(ringFrame==null || ringFrame.Bitmap.Width!=Width || ringFrame.Bitmap.Height!=Height) {
+            ClearRingCache();
+            ringFrame=new LayeredFrame(Width,Height);
+            ringBase=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb);
+            ringLabels=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb);
+            try {
+                renderPass=1; using(var g=Graphics.FromImage(ringBase)) { SetupGraphics(g); DrawFluentRing(g); }
+                renderPass=2; using(var g=Graphics.FromImage(ringLabels)) { SetupGraphics(g); DrawFluentRing(g); }
+            } finally { renderPass=0; }
+        }
+        var graphics=ringFrame.Graphics;
+        if(SystemInformation.HighContrast) {
+            // Accessibility highlight text depends on hover; never freeze it.
+            graphics.Clear(Color.Transparent); DrawFluentRing(graphics);
+            ringFrame.Present(Handle,Location); RememberFrame(); return;
+        }
+        graphics.CompositingMode=CompositingMode.SourceCopy;
+        graphics.DrawImageUnscaled(ringBase,0,0);
+        graphics.CompositingMode=CompositingMode.SourceOver;
+        try { renderPass=3; DrawFluentRing(graphics); } finally { renderPass=0; }
+        graphics.DrawImageUnscaled(ringLabels,0,0);
+        ringFrame.Present(Handle,Location);
+        RememberFrame();
+    }
+    private void RememberFrame()
+    { presentedPoint=last; presentedHover=hover; presentedContact=active; presentedWait=waitInitialUp; framePresented=true; }
+    private static void SetupGraphics(Graphics g)
+    { g.SmoothingMode=SmoothingMode.AntiAlias; g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit; }
+    // Persistent DIB is also the GDI+ render target: no per-frame bitmap/DC,
+    // LockBits, managed row buffers or double Marshal.Copy of every pixel.
+    private sealed class LayeredFrame : IDisposable
+    {
+        internal Bitmap Bitmap; internal Graphics Graphics;
+        private IntPtr dc,image,old;
+        internal LayeredFrame(int width,int height)
+        {
+            try {
+                var info=new DibInfo { Size=40,Width=width,Height=-height,Planes=1,Bits=32 };
+                IntPtr bits; image=CreateDIBSection(IntPtr.Zero,ref info,0,out bits,IntPtr.Zero,0);
+                dc=CreateCompatibleDC(IntPtr.Zero);
+                if(image==IntPtr.Zero || bits==IntPtr.Zero || dc==IntPtr.Zero) throw new InvalidOperationException("Frame allocation failed");
+                old=SelectObject(dc,image);
+                Bitmap=new Bitmap(width,height,width*4,PixelFormat.Format32bppPArgb,bits);
+                Graphics=Graphics.FromImage(Bitmap); SetupGraphics(Graphics);
+            } catch { Dispose(); throw; }
+        }
+        internal void Present(IntPtr handle,Point location)
+        {
+            Graphics.Flush(FlushIntention.Sync);
+            var dest=new PointNative { X=location.X,Y=location.Y }; var size=new NativeSize { X=Bitmap.Width,Y=Bitmap.Height }; var origin=new PointNative();
+            var blend=new Blend { Alpha=255,Format=1 };
+            if(!UpdateLayeredWindow(handle,IntPtr.Zero,ref dest,ref size,dc,ref origin,0,ref blend,2))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+        public void Dispose()
+        {
+            if(Graphics!=null) { Graphics.Dispose(); Graphics=null; }
+            if(Bitmap!=null) { Bitmap.Dispose(); Bitmap=null; }
+            if(old!=IntPtr.Zero) { SelectObject(dc,old); old=IntPtr.Zero; }
+            if(image!=IntPtr.Zero) { DeleteObject(image); image=IntPtr.Zero; }
+            if(dc!=IntPtr.Zero) { DeleteDC(dc); dc=IntPtr.Zero; }
         }
     }
     private static void PresentBitmap(IntPtr handle,Point location,Bitmap bitmap)
@@ -161,6 +237,8 @@ internal sealed partial class RingLab
         Color surface=hc ? SystemColors.Window : darkMaterial ? Color.FromArgb(38,38,38) : Color.FromArgb(243,243,243);
         Color text=ReadableInk();
         var disk=new RectangleF(center.X-radius,center.Y-radius,2*radius,2*radius);
+        bool background=renderPass==0 || renderPass==1, labels=renderPass==0 || renderPass==2, dynamic=renderPass==0 || renderPass==3;
+        if(background) {
         // Soft elevation remains inside the existing 9-DIP safety margin.
         for(int n=8;n>=1;n--) using(var b=new SolidBrush(Color.FromArgb(3,0,0,0)))
             g.FillEllipse(b,disk.X-n*scale,disk.Y-n*scale+scale,disk.Width+2*n*scale,disk.Height+2*n*scale);
@@ -180,11 +258,12 @@ internal sealed partial class RingLab
             }
             g.Restore(state);
         }
+        }
         bool reveal=active!=0 && !waitInitialUp && !hc;
         for(int i=0;i<6;i++) using(var path=SectorPath(i)) {
-            if(hover==i) using(var b=new SolidBrush(hc ? SystemColors.Highlight : Color.FromArgb(65,accent))) g.FillPath(b,path);
-            using(var pen=new Pen(hc ? SystemColors.WindowText : Color.FromArgb(darkMaterial ? 50 : 36,text),scale)) g.DrawPath(pen,path);
-            if(reveal && enabled[i]) {
+            if(dynamic && hover==i) using(var b=new SolidBrush(hc ? SystemColors.Highlight : Color.FromArgb(65,accent))) g.FillPath(b,path);
+            if(background) using(var pen=new Pen(hc ? SystemColors.WindowText : Color.FromArgb(darkMaterial ? 50 : 36,text),scale)) g.DrawPath(pen,path);
+            if(dynamic && reveal && enabled[i]) {
                 var state=g.Save(); g.SetClip(path,CombineMode.Intersect);
                 using(var glow=new GraphicsPath()) {
                     float r=94*scale; glow.AddEllipse(last.X-r,last.Y-r,2*r,2*r);
@@ -202,6 +281,7 @@ internal sealed partial class RingLab
                     }
                 }
             }
+            if(!labels) continue;
             double angle=(-90+i*60)*Math.PI/180; float mid=(inner+radius)/2;
             float x=center.X+(float)Math.Cos(angle)*mid, y=center.Y+(float)Math.Sin(angle)*mid;
             Color ink=hc ? (hover==i ? SystemColors.HighlightText : SystemColors.WindowText) : text;
@@ -209,7 +289,8 @@ internal sealed partial class RingLab
             DrawFluentIcon(g,names[i],x,y-11*scale,ink);
             DrawText(g,names[i],x,y+15*scale,names[i].Length>12 ? 11 : 12,ink,true);
         }
-        using(var pen=new Pen(Color.FromArgb(hc ? 255 : 80,text),scale)) g.DrawEllipse(pen,disk);
+        if(background) using(var pen=new Pen(Color.FromArgb(hc ? 255 : 80,text),scale)) g.DrawEllipse(pen,disk);
+        if(!labels) return;
         Color centerInk=text;
         DrawText(g,contextLabel,center.X,center.Y-9*scale,14,centerInk,true);
         DrawText(g,"Отмена",center.X,center.Y+13*scale,11,centerInk,true);
