@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
-$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v05.exe'))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v06.exe'))
 $flags = [Reflection.BindingFlags]'Instance,NonPublic'
 $static = [Reflection.BindingFlags]'Static,NonPublic'
 $type = $assembly.GetType('RingLab', $true)
@@ -50,10 +50,23 @@ try {
     Assert (-not (Get-Field 'waitInitialUp')) 'Initial up not acknowledged'
     Invoke-Method 'TouchDown' @([uint32]43,[Drawing.PointF]::new(1,1)) | Out-Null
     Assert (-not (Get-Field 'visibleRing')) 'Outside cancellation failed'
+    # Dynamic context labels and disabled sectors share the same geometry.
+    Invoke-Method 'Configure' @([string[]]@('Paste','Paste shortcut','Refresh','New folder','Properties','More'),[bool[]]@($false,$false,$true,$true,$true,$true),$true) | Out-Null
+    Set-Field 'anchor' ([Drawing.PointF]::new(1500,960))
+    Invoke-Method 'OpenRing' @() | Out-Null
+    $c=Get-Field 'center'
+    for($i=0;$i -lt 6;$i++) {
+        $a=(-90+60*$i)*[math]::PI/180
+        $p=[Drawing.PointF]::new($c.X+206*[math]::Cos($a),$c.Y+206*[math]::Sin($a))
+        $expected=if($i -lt 2) { -1 } else { $i }
+        Assert ((Invoke-Method 'Hit' @($p)) -eq $expected) 'Disabled sector selectable'
+    }
+    Assert ((Get-Field 'contextLabel')[0] -eq [char]0x041f) 'Wrong background context label'
+    Invoke-Method 'Cancel' @('test') | Out-Null
     # Input message guards: no install for thread zero or same-process windows.
     $begin=$native.GetMethod('BeginBridge',$static)
     Assert ($begin.Invoke($null,@([uint32]0,[uint64]0,[uint64]0)) -eq 87) 'Unsafe target accepted'
-    Write-Output "PASS: overlay build; 72-byte ABI; no autonomous timer; $cases placements; 294 hits; fixed initial release; outside cancel; invalid bridge target refused. No Explorer connection, no interactive window."
+    Write-Output "PASS: overlay build; 72-byte ABI; no autonomous timer; $cases placements; 294 hits; fixed initial release; outside cancel; background labels; disabled sector hit rejection; invalid bridge target refused. No Explorer connection, no interactive window."
 } finally {
     $native.GetMethod('EndObservation',$static).Invoke($null,@()) | Out-Null
     (Get-Field 'timer').Stop()

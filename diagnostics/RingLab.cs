@@ -26,6 +26,8 @@ internal sealed partial class RingLab : Form
     [DllImport("user32.dll")] private static extern bool GetPointerInfo(uint id, out PointerInfo info);
 
     private readonly string[] names = { "Открыть", "Копировать", "Вырезать", "Переименовать", "В корзину", "Ещё…" };
+    private readonly bool[] enabled = { true,true,true,true,true,true };
+    private string contextLabel="Файл";
     private readonly Timer timer = new Timer();
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly StreamWriter log;
@@ -134,7 +136,8 @@ internal sealed partial class RingLab : Form
         // Small dead zone at sector boundaries avoids ambiguous selections.
         double within = normalized % 60;
         if (within < 1.5 || within > 58.5) return -1;
-        return (int)(normalized / 60);
+        int sector=(int)(normalized / 60);
+        return enabled[sector] ? sector : -1;
     }
 
     private void Cancel(string reason)
@@ -275,10 +278,10 @@ internal sealed partial class RingLab : Form
             double angle = (start+30)*Math.PI/180;
             float r=(inner+radius)/2;
             float x=center.X+(float)Math.Cos(angle)*r,y=center.Y+(float)Math.Sin(angle)*r;
-            DrawText(g,names[i],x,y, i==3 ? 11 : 12,Color.FromArgb(35,53,67),true);
+            DrawText(g,names[i],x,y, names[i].Length>12 ? 10 : i==3 ? 11 : 12,enabled[i] ? Color.FromArgb(35,53,67) : Color.FromArgb(157,163,168),true);
         }
         using (var brush = new SolidBrush(Color.White)) g.FillEllipse(brush,center.X-inner+3*scale,center.Y-inner+3*scale,(inner-3*scale)*2,(inner-3*scale)*2);
-        DrawText(g,"Файл\nОтмена",center.X,center.Y,14,Color.SlateGray,true);
+        DrawText(g,contextLabel+"\nОтмена",center.X,center.Y,14,Color.SlateGray,true);
         DrawText(g,fixedMode ? "КАСАНИЕ" : "ЖЕСТ",center.X,center.Y+radius+22*scale,12,Color.FromArgb(0,100,175),true);
     }
 

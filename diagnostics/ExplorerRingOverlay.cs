@@ -18,7 +18,7 @@ internal sealed partial class RingLab
         var f = new RingLab();
         f.integrated = true;
         f.timer.Stop();
-        f.Text = "Explorer Ring — имитация";
+        f.Text = "Explorer Ring";
         f.BackColor = f.TransparencyKey = Color.Magenta;
         f.ShowInTaskbar = false;
         f.TopMost = true;
@@ -57,6 +57,12 @@ internal sealed partial class RingLab
         Show();
         // Original Shown handler reads monitor DPI, starts no timer.
         Invalidate();
+    }
+    internal void Configure(string[] labels,bool[] available,bool background)
+    {
+        if(labels.Length!=6 || available.Length!=6) throw new ArgumentException("Six sectors required");
+        Array.Copy(labels,names,6); Array.Copy(available,enabled,6);
+        contextLabel=background ? "Папка" : "Файл";
     }
     internal void ForwardMove(uint id, Point screen, bool cancelled)
     {
