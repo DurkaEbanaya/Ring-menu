@@ -13,7 +13,7 @@ $session=[Diagnostics.Process]::GetCurrentProcess().SessionId
 if($session -ne 0 -or $session -eq [SessionGuard]::WTSGetActiveConsoleSessionId()) { throw 'Requires isolated session 0, not the interactive console.' }
 $existing=[Windows.Forms.Clipboard]::GetDataObject()
 if($existing -ne $null -and $existing.GetFormats().Length -ne 0) { throw 'Test session clipboard is not empty; refusing to replace it.' }
-$assembly=[Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v013.exe'))
+$assembly=[Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v014.exe'))
 $type=$assembly.GetType('ShellCommands',$true)
 $flags=[Reflection.BindingFlags]'Instance,NonPublic'
 $constructor=$type.GetConstructor($flags,$null,[type[]]@([string],[bool],[IntPtr]),$null)

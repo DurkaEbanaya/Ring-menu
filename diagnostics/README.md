@@ -20,7 +20,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v013.exe`; положить рядом `ExplorerBridge-v013.dll`. Native hold threshold также изменён, смешивать версии нельзя.
+- `build-ExplorerRing.ps1`: `ExplorerRing-v014.exe`; положить рядом `ExplorerBridge-v014.dll`. Native hold threshold также изменён, смешивать версии нельзя.
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -29,7 +29,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v013.exe --self-test
+.\ExplorerRing-v014.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -49,7 +49,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
-### Дополнительно для 0.13
+### Дополнительно для 0.14
+
+- Порог native и standalone 200 мс, progress denominator 200. `Test-BridgePolicy` проверяет отсутствие захвата в 199 мс и захват в 200 мс; short tap завершается до порога. Slop, защита secondary/cancel, очереди и файлы не менялись. Вручную проверить обычный тап, медленное начало drag и случайные вызовы: уменьшение порога сокращает время для начала обычного перемещения.
+
+### История 0.13
 
 - Native и standalone hold 300 мс; политика проверяется на 299/300 мс. Сохранены 14-DIP early-drag guard, short tap, secondary/cancel/recovery, точный UP и auto-stop.
 - `ExplorerRename` владеет подготовленным файловым Shell menu как IDisposable. `Capture` передаёт владение уже построенным объектом, `TakePreparedMore` отдаёт его ровно один раз, только при неизменном clipboard sequence. Между жестами/целями нет кэша; background не переиспользует folder-object menu. Контроллер освобождает объект при отмене, ошибке capture, стопе, отрицательном выборе и после любой команды. Shell self-test проверяет все три lifetime-ветки и симулирует изменившийся sequence без изменения буфера.

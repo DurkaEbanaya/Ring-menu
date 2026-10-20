@@ -4,15 +4,15 @@
 int main(void) {
     BRIDGE_POLICY p = {0};
     assert(bridgePolicy(&p,0x246,1,0x2004,100,100,1000,28,1)==0);
-    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1299,28,1)==0);
-    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1300,28,1)==1);
+    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1199,28,1)==0);
+    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1200,28,1)==1);
     assert(bridgePolicy(&p,0x245,1,0x2004,300,100,1700,28,0)==2);
     assert(bridgePolicy(&p,0x246,20,0x4,400,100,1710,28,1)==4);
     assert(p.id==1 && p.phase==2);
     assert(bridgePolicy(&p,0x247,1,0,300,100,1800,28,0)==3);
     assert(!p.id && !p.phase);
     bridgePolicy(&p,0x246,2,0x2004,100,100,2000,28,1);
-    assert(bridgePolicy(&p,0x247,2,0,100,100,2200,28,1)==0 && !p.id);
+    assert(bridgePolicy(&p,0x247,2,0,100,100,2199,28,1)==0 && !p.id);
     bridgePolicy(&p,0x246,3,0x2004,100,100,3000,28,1);
     assert(bridgePolicy(&p,0x245,3,0x2004,129,100,3100,28,1)==0);
     assert(bridgePolicy(&p,0x245,3,0x2004,100,100,3800,28,1)==0);

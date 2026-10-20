@@ -24,16 +24,16 @@ internal static class ExplorerRingNative
         internal int X, Y;
         internal uint OsTime, Reserved;
     }
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BeginObservation(uint thread);
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BridgePulse(uint enabled);
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern void EndObservation();
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BridgeDiagnosticDrops();
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint SetBridgeNotify(ulong hwnd);
-    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint TestBridgeWake(ulong hwnd);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint BeginObservation(uint thread);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint BridgePulse(uint enabled);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern void EndObservation();
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint BridgeDiagnosticDrops();
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint SetBridgeNotify(ulong hwnd);
+    [DllImport("ExplorerBridge-v014.dll")] internal static extern uint TestBridgeWake(ulong hwnd);
     [DllImport("user32.dll")] internal static extern uint MsgWaitForMultipleObjectsEx(uint count,IntPtr handles,uint milliseconds,uint mask,uint flags);
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern IntPtr WindowFromPoint(Point point);
@@ -82,7 +82,7 @@ internal sealed class ExplorerRing : Form
 
     internal ExplorerRing()
     {
-        Text = "Ring menu 0.13 — удержание 300 мс · быстрый Ещё";
+        Text = "Ring menu 0.14 — удержание 200 мс · быстрый Ещё";
         Font = new Font("Segoe UI", 11);
         ClientSize = new Size(880, 540);
         StartPosition = FormStartPosition.CenterScreen;
@@ -91,7 +91,7 @@ internal sealed class ExplorerRing : Form
             "1. Закройте предыдущие диагностические программы.\n" +
             "2. Откройте папку с ненужным тестовым файлом.\n" +
             "3. Нажмите «Подключить» и переключитесь в папку за 8 секунд.\n" +
-            "4. Удержите файл: через 300 мс ожидается кольцо.\n" +
+            "4. Удержите файл: через 200 мс ожидается кольцо.\n" +
             "5. В центре: ведите в сектор и отпустите. У края: отпустите,\n" +
             "    затем коснитесь сектора. На пустом месте — другое меню.\n\n" +
             "Проверяем: нет второго штатного меню и перетаскивания;\n" +
@@ -109,7 +109,7 @@ internal sealed class ExplorerRing : Form
         status.SetBounds(24,440,830,85); status.Text="Не подключено."; Controls.Add(status);
         string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"explorer-ring-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log");
         log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=false;
-        Write("START version=0.13 gestureMenuReuse=true eventWake=true cachedReveal=true cachedRendering=true uniformInk=true compactMore=true labelBackings=false holdMs=300 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
+        Write("START version=0.14 gestureMenuReuse=true eventWake=true cachedReveal=true cachedRendering=true uniformInk=true compactMore=true labelBackings=false holdMs=200 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
         overlay=RingLab.CreateOverlay();
         var warmWatch=Stopwatch.StartNew();
         RingLab.WarmRenderer();
@@ -417,7 +417,7 @@ internal sealed class ExplorerRing : Form
                 ExplorerRingNative.EndObservation();
                 ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero);
                 if(ExplorerRingNative.DrainObservation(items,128,out lost)!=0) throw new Exception("Events after unhook");
-                File.WriteAllText(path,"PASS v0.13: single-gesture menu reuse/ownership/disposal/clipboard invalidation; wake window validation; uniform foreground/luminance; Segoe UI availability; compact variable-height rows; swipe scroll without command; scroll clamping/last item; hidden submenu/back; DIB exact alpha/top-down/premultiplication; local Shell file/background menus without execution; target guards; coordinate packing; unknown verb rejection; invocation/menu state ABI; view resolution; bridge GET/CALL/shared queue/preserved response/submenu telemetry/unhook. Events="+n+"\r\n");
+                File.WriteAllText(path,"PASS v0.14: single-gesture menu reuse/ownership/disposal/clipboard invalidation; wake window validation; uniform foreground/luminance; Segoe UI availability; compact variable-height rows; swipe scroll without command; scroll clamping/last item; hidden submenu/back; DIB exact alpha/top-down/premultiplication; local Shell file/background menus without execution; target guards; coordinate packing; unknown verb rejection; invocation/menu state ABI; view resolution; bridge GET/CALL/shared queue/preserved response/submenu telemetry/unhook. Events="+n+"\r\n");
                 return 0;
             }
         } catch(Exception e) { File.WriteAllText(path,"FAIL: "+e+"\r\n"); return 1; }
