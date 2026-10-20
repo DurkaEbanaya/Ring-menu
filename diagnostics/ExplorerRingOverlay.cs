@@ -8,6 +8,7 @@ internal sealed partial class RingLab
 {
     private bool integrated;
     private OutsideVeil veil;
+    private AcrylicSurface acrylic;
     internal event Action<int> Selected;
     internal event Action<string> OverlayCancelled;
     internal bool AwaitingNextTouch { get { return visibleRing && fixedMode && !waitInitialUp; } }
@@ -19,7 +20,7 @@ internal sealed partial class RingLab
         f.integrated = true;
         f.timer.Stop();
         f.Text = "Explorer Ring";
-        f.BackColor = f.TransparencyKey = Color.Magenta;
+        f.BackColor = Color.Black;
         f.ShowInTaskbar = false;
         f.TopMost = true;
         return f;
@@ -30,7 +31,7 @@ internal sealed partial class RingLab
         get
         {
             var p = base.CreateParams;
-            if (integrated) p.ExStyle |= 0x08000080; // NOACTIVATE | TOOLWINDOW
+            if (integrated) p.ExStyle |= 0x08080080; // NOACTIVATE | LAYERED | TOOLWINDOW
             return p;
         }
     }
@@ -44,6 +45,16 @@ internal sealed partial class RingLab
         active = id;
         OpenRing();
         if (!visibleRing) return;
+        // Keep per-pixel composition small, independent of monitor resolution.
+        var screenCenter = new PointF(Left+center.X, Top+center.Y);
+        int extentPixels = (int)Math.Ceiling(radius+9*scale);
+        var origin = new Point((int)Math.Floor(screenCenter.X)-extentPixels,
+            (int)Math.Floor(screenCenter.Y)-extentPixels);
+        var offset = new PointF(Left-origin.X,Top-origin.Y);
+        Bounds = new Rectangle(origin,new Size(extentPixels*2+2,extentPixels*2+2));
+        center = new PointF(center.X+offset.X,center.Y+offset.Y);
+        anchor = new PointF(anchor.X+offset.X,anchor.Y+offset.Y);
+        last = new PointF(last.X+offset.X,last.Y+offset.Y);
         // Limit window hit testing to the visible circle. Existing Explorer
         // contact stays implicitly captured to Explorer, forwarded as data.
         using (var path = new GraphicsPath())
@@ -54,6 +65,12 @@ internal sealed partial class RingLab
             Region = new Region(path);
             if (old != null) old.Dispose();
         }
+        LoadFluentPalette();
+        acrylic = new AcrylicSurface(Bounds,center,radius,darkMaterial);
+        acrylic.Show();
+        materialBlur = acrylic.EnableMaterial();
+        Log("MATERIAL requested=Acrylic apiAccepted="+materialBlur+" dark="+darkMaterial+" highContrast="+SystemInformation.HighContrast);
+        PresentOverlay();
         Show();
         // Original Shown handler reads monitor DPI, starts no timer.
         Invalidate();
@@ -69,17 +86,20 @@ internal sealed partial class RingLab
         if (!visibleRing) return;
         if (cancelled) { DismissOverlay("System cancelled contact", true); return; }
         TouchMove(id, new PointF(screen.X-Left, screen.Y-Top));
+        PresentOverlay();
     }
     internal void ForwardUp(uint id, Point screen, bool cancelled)
     {
         if (!visibleRing) return;
         if (cancelled) { DismissOverlay("System cancelled contact", true); return; }
         TouchUp(id, new PointF(screen.X-Left, screen.Y-Top));
+        PresentOverlay();
         if (AwaitingNextTouch)
         {
-            veil = new OutsideVeil(Bounds);
+            veil = new OutsideVeil(Screen.FromPoint(screen).WorkingArea);
             veil.Touched += delegate { DismissOverlay("Outside touch", true); };
             veil.Show();
+            if(acrylic!=null) ExplorerRingNative.SetWindowPos(acrylic.Handle,new IntPtr(-1),0,0,0,0,0x13);
             // Keep ring above veil without activating Explorer or overlay.
             ExplorerRingNative.SetWindowPos(Handle, new IntPtr(-1), 0,0,0,0, 0x13);
         }
@@ -87,6 +107,7 @@ internal sealed partial class RingLab
     internal void DismissOverlay(string reason, bool notify)
     {
         if (veil != null) { veil.Close(); veil.Dispose(); veil = null; }
+        CloseMaterial();
         Cancel(reason);
         Hide();
         if (notify && OverlayCancelled != null) OverlayCancelled(reason);
@@ -94,8 +115,14 @@ internal sealed partial class RingLab
     private void CompleteOverlay(int sector)
     {
         if (veil != null) { veil.Close(); veil.Dispose(); veil = null; }
+        CloseMaterial();
         Hide();
         if (Selected != null) Selected(sector);
+    }
+    protected override void Dispose(bool disposing)
+    {
+        if(disposing && integrated) { CloseMaterial(); if(veil!=null) { veil.Dispose(); veil=null; } }
+        base.Dispose(disposing);
     }
     private bool OverlayMessage(ref Message m)
     {
@@ -114,6 +141,7 @@ internal sealed partial class RingLab
                     if (m.Msg == 0x246) TouchDown(id, point);
                     else if (m.Msg == 0x245) TouchMove(id, point);
                     else TouchUp(id, point);
+                    PresentOverlay();
                     if (!visibleRing && Visible) DismissOverlay("Touch cancelled", true);
                 }
                 m.Result = IntPtr.Zero; return true;

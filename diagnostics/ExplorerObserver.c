@@ -58,6 +58,7 @@ API I32 GetCurrentInputMessageSource(SOURCE *);
 API I64 GetMessageExtraInfo(void);
 API I32 GetClassNameW(PTR, WCHAR *, I32);
 API I32 GetMessageTime(void);
+API I32 GetMenuItemCount(PTR);
 #ifdef EXPLORER_BRIDGE
 static const WCHAR mappingName[] = L"Local\\TouchMenuStudy.ExplorerBridge.v1";
 #else
@@ -101,6 +102,12 @@ static void record(U32 stage, PTR hwnd, U32 message, U64 wp, I64 lp, U32 time) {
     EVENT e = {0};
     e.tick = now; e.thread = GetCurrentThreadId(); e.stage = stage; e.message = message;
     e.hwnd = (U64)hwnd; e.osTime = time;
+    /* Only counts/position, never menu text, command IDs or object names. */
+    if (message == 0x117) {
+        I32 count = GetMenuItemCount((PTR)wp);
+        e.reserved = count < 0 ? 0xffffffffU : (U32)count;
+        e.id = (U32)lp & 0xffff;
+    }
     e.extra = (U64)GetMessageExtraInfo();
     SOURCE src = {0};
     GetCurrentInputMessageSource(&src);

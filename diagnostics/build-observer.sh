@@ -33,6 +33,7 @@ GetParent
 GetForegroundWindow
 GetDpiForWindow
 GetWindowThreadProcessId
+GetMenuItemCount
 EOF
 llvm-dlltool -m i386:x86-64 -d "$build/kernel32.def" -l "$build/kernel32.lib"
 llvm-dlltool -m i386:x86-64 -d "$build/user32.def" -l "$build/user32.lib"
@@ -46,6 +47,7 @@ lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v04.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v05.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v06.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
+lld-link /dll /machine:x64 /entry:DllMain /nodefaultlib /dynamicbase /nxcompat /out:ExplorerBridge-v07.dll "$build/bridge.obj" "$build/kernel32.lib" "$build/user32.lib"
 clang -std=c11 -O2 -Wall -Wextra -Werror Test-BridgePolicy.c -o "$build/test-policy"
 "$build/test-policy"
 clang -std=c11 -O2 -Wall -Wextra -Werror Test-EventQueue.c -o "$build/test-queue"

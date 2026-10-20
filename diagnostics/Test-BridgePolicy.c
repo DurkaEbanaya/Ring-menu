@@ -4,8 +4,8 @@
 int main(void) {
     BRIDGE_POLICY p = {0};
     assert(bridgePolicy(&p,0x246,1,0x2004,100,100,1000,28,1)==0);
-    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1649,28,1)==0);
-    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1650,28,1)==1);
+    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1449,28,1)==0);
+    assert(bridgePolicy(&p,0x245,1,0x2004,101,100,1450,28,1)==1);
     assert(bridgePolicy(&p,0x245,1,0x2004,300,100,1700,28,0)==2);
     assert(bridgePolicy(&p,0x246,20,0x4,400,100,1710,28,1)==4);
     assert(p.id==1 && p.phase==2);

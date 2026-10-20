@@ -8,6 +8,7 @@
 |---|---|
 | `RingLab.cs` | Общая геометрия/отрисовка и изолированный сенсорный стенд. Без `EXPLORER_RING` не подключается к Explorer. |
 | `ExplorerRingOverlay.cs` | Неактивирующее кольцо и подложка для отмены смещённого меню. |
+| `FluentRing.cs` | Per-pixel-alpha кольцо, отдельный DWM Acrylic backdrop, тема/иконки Windows, собственный Reveal и solid/high-contrast fallback. |
 | `ExplorerRing.cs` | Контроллер временного перехвата; отслеживает подходящее активное окно, отключается через 3 минуты. |
 | `ExplorerRename.cs` | UI Automation hit test файла/пустого места, повторная проверка цели и диспетчер команд; историческое имя файла сохранено. |
 | `ShellCommands.cs` | Локальный Shell COM: проверка canonical verbs, копирование/вырезание/вставка, свойства; корзина через `IFileOperation`. |
@@ -18,7 +19,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v06.exe`; положить рядом `ExplorerBridge-v06.dll`.
+- `build-ExplorerRing.ps1`: `ExplorerRing-v07.exe`; положить рядом `ExplorerBridge-v07.dll`.
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -27,7 +28,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v06.exe --self-test
+.\ExplorerRing-v07.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -36,6 +37,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 `--self-test` создаёт только невидимое собственное окно: проверяет DLL/ABI/GET+CALL hooks/queue/unhook, сохранность ответа окна, разрешение пересозданного view, отказ опасных целей, чистые проверки сопоставления/неоднозначности имён. В 0.6 также создаёт уникальную временную папку и собственный файл, запрашивает их Shell-меню, проверяет canonical copy/cut/properties и отказ неизвестной команды, удаляет только созданные им файл/папку. Не выполняет команды над пользовательскими файлами, не меняет буфер обмена и не подтверждает desktop COM/UIA интеграцию.
 
 `Test-ExplorerRing.ps1`: 49 позиций, 294 попадания в секторы, границы экрана, зона пальца, исходное отпускание в FIXED и отмена снаружи. Не заменяет ручной тест touchscreen.
+
+### Дополнительно для 0.7
+
+- Native policy проверяет отсутствие захвата на 449 мс и захват на 450 мс; ранний drag по-прежнему отменяет кандидата.
+- `--self-test`: упаковка экранных координат (включая отрицательные), отказ переполнения и клавиатурного sentinel; фиктивное собственное submenu без показа проверяет передачу количества элементов/позиции через DLL. Реальные пользовательские меню не открывает.
+- `Test-ExplorerRing.ps1` дополнительно рисует light/dark, solid/translucent и Reveal в PArgb bitmap; проверяет прозрачность вне кольца и вызывает `UpdateLayeredWindow` только для собственного скрытого окна.
+- Вручную: 450 мс против быстрого drag, подсветка около пальца, светлая/тёмная тема, размытие движущегося/контрастного фона, FIXED у углов и исходное отпускание. API acceptance в журнале не доказывает видимое размытие; при системных ограничениях ожидается solid fallback.
+- «Ещё» на пустом месте: раскрыть «Вид», «Сортировка», «Создать»; сменить вид и создать тестовую папку. На файле: раскрыть доступное «Отправить» (без отправки данных), проверить «Свойства». Повторить в папке и на рабочем столе и снова вызвать кольцо после закрытия меню.
+- `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
+- Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
 `Test-ShellTransfer.ps1`: **только изолированный сеанс 0 по SSH**, `powershell -STA -NoProfile -ExecutionPolicy Bypass -File .\Test-ShellTransfer.ps1`. Отказывается работать в интерактивном console/RDP-сеансе и при непустом буфере. Создаёт уникальные собственные тестовые папки/файл, выполняет Shell copy/paste и cut/paste, проверяет содержимое и наличие/исчезновение источника, очищает только свой тест и изолированный буфер. На Windows 10 этот тест прошёл. Это не проверка сенсорного меню и не тест пользовательского буфера.
 

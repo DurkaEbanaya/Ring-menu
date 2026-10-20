@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
-$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v06.exe'))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v07.exe'))
 $flags = [Reflection.BindingFlags]'Instance,NonPublic'
 $static = [Reflection.BindingFlags]'Static,NonPublic'
 $type = $assembly.GetType('RingLab', $true)
@@ -62,11 +62,39 @@ try {
         Assert ((Invoke-Method 'Hit' @($p)) -eq $expected) 'Disabled sector selectable'
     }
     Assert ((Get-Field 'contextLabel')[0] -eq [char]0x041f) 'Wrong background context label'
+    # Exercise the actual PArgb renderer, Reveal and both material palettes.
+    $bitmap=[Drawing.Bitmap]::new(3000,1920,[Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+    $graphics=[Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        Set-Field 'active' ([uint32]99)
+        Set-Field 'waitInitialUp' $false
+        Set-Field 'last' ([Drawing.PointF]::new(1500,754))
+        Set-Field 'hover' 2
+        foreach($dark in @($false,$true)) {
+            Set-Field 'darkMaterial' $dark
+            foreach($blur in @($false,$true)) {
+                Set-Field 'materialBlur' $blur
+                $graphics.Clear([Drawing.Color]::Transparent)
+                Invoke-Method 'DrawFluentRing' @($graphics) | Out-Null
+                Assert ($bitmap.GetPixel(1500,960).A -gt 0) 'Material center missing'
+                Assert ($bitmap.GetPixel(0,0).A -eq 0) 'Overlay background must be transparent'
+            }
+        }
+        Set-Field 'materialBlur' $false
+    } finally { $graphics.Dispose(); $bitmap.Dispose() }
+    # Exercise UpdateLayeredWindow only on our own hidden window (never Show).
+    $form.ClientSize=[Drawing.Size]::new(640,640)
+    Set-Field 'center' ([Drawing.PointF]::new(320,320))
+    Set-Field 'last' ([Drawing.PointF]::new(320,114))
+    $null=$form.Handle
+    Invoke-Method 'PresentOverlay' @() | Out-Null
+    Assert (-not $form.Visible) 'Layered surface test showed a window'
     Invoke-Method 'Cancel' @('test') | Out-Null
     # Input message guards: no install for thread zero or same-process windows.
     $begin=$native.GetMethod('BeginBridge',$static)
     Assert ($begin.Invoke($null,@([uint32]0,[uint64]0,[uint64]0)) -eq 87) 'Unsafe target accepted'
-    Write-Output "PASS: overlay build; 72-byte ABI; no autonomous timer; $cases placements; 294 hits; fixed initial release; outside cancel; background labels; disabled sector hit rejection; invalid bridge target refused. No Explorer connection, no interactive window."
+    Write-Output "PASS: overlay build; 72-byte ABI; no autonomous timer; $cases placements; 294 hits; fixed initial release; outside cancel; background labels; disabled sector hit rejection; PArgb renderer light/dark solid/translucent Reveal; invalid bridge target refused. No Explorer connection, no interactive window."
 } finally {
     $native.GetMethod('EndObservation',$static).Invoke($null,@()) | Out-Null
     (Get-Field 'timer').Stop()

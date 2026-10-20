@@ -225,8 +225,16 @@ internal sealed class ExplorerRename
         IntPtr child=ExplorerRingNative.WindowFromPoint(point);
         if(ExplorerRingNative.ResolveBridgeView(unchecked((ulong)root.ToInt64()),unchecked((ulong)child.ToInt64()))!=unchecked((ulong)view.ToInt64()))
             throw new InvalidOperationException("Menu target changed");
-        long packed=(long)(ushort)point.X|((long)(ushort)point.Y<<16);
-        if(!ExplorerRingNative.PostMessage(child,0x7b,child,new IntPtr(packed))) throw new InvalidOperationException("Context menu request failed");
+        if(!ExplorerRingNative.PostMessage(child,0x7b,child,ContextCoordinates(point))) throw new InvalidOperationException("Context menu request failed");
+    }
+    private static IntPtr ContextCoordinates(Point p)
+    {
+        if(p.X<short.MinValue || p.X>short.MaxValue || p.Y<short.MinValue || p.Y>short.MaxValue)
+            throw new InvalidOperationException("Context coordinates out of range");
+        // WM_CONTEXTMENU uses signed 16-bit screen coordinates, including
+        // monitors left/above the primary. (-1,-1) is reserved for keyboard.
+        if(p.X==-1 && p.Y==-1) throw new InvalidOperationException("Reserved context coordinates");
+        return new IntPtr((long)(ushort)p.X|((long)(ushort)p.Y<<16));
     }
     public sealed class FakeItem
     {
@@ -244,6 +252,16 @@ internal sealed class ExplorerRename
     public sealed class FakeDocument { public FakeItems Folder { get; set; } }
     internal static void SelfTest()
     {
+        foreach(var p in new[] { new Point(120,240),new Point(-120,-240),new Point(-1,40) }) {
+            long packed=ContextCoordinates(p).ToInt64();
+            if((short)(packed & 65535)!=p.X || (short)((packed>>16)&65535)!=p.Y) throw new Exception("Context coordinate packing failed");
+        }
+        bool bad=false;
+        try { ContextCoordinates(new Point(-1,-1)); } catch(InvalidOperationException) { bad=true; }
+        if(!bad) throw new Exception("Keyboard context sentinel accepted");
+        bad=false;
+        try { ContextCoordinates(new Point(40000,0)); } catch(InvalidOperationException) { bad=true; }
+        if(!bad) throw new Exception("Context coordinate truncation accepted");
         var a=new FakeItem { Name="alpha.txt",Path=@"C:\test\alpha.txt",IsFileSystem=true };
         var b=new FakeItem { Name="alpha.log",Path=@"C:\test\alpha.log",IsFileSystem=true };
         var doc=new FakeDocument { Folder=new FakeItems { Values=new[] { a,b } } };
