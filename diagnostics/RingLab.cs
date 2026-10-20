@@ -227,13 +227,21 @@ internal sealed partial class RingLab : Form
         { if (centered) { format.Alignment = StringAlignment.Center; format.LineAlignment = StringAlignment.Center; } g.DrawString(value, font, brush, x, y, format); }
     }
 
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+#if EXPLORER_RING
+        if(integrated) return; // Manual alpha surface must not be painted opaque.
+#endif
+        base.OnPaintBackground(e);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
-        base.OnPaint(e);
-        Graphics g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
 #if EXPLORER_RING
         if (integrated) { PresentOverlay(); return; }
 #endif
+        base.OnPaint(e);
+        Graphics g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
         DrawText(g, "Кольцо · тест взаимодействия", 24*scale, 20*scale, 25, Color.FromArgb(32,42,52), false);
         DrawText(g, "Без подключения к Проводнику. Все действия — имитация.", 24*scale, 58*scale, 14, Color.DimGray, false);
         close = new RectangleF(ClientSize.Width-142*scale, 18*scale, 120*scale, 48*scale);

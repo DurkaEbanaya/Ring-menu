@@ -14,6 +14,7 @@ internal sealed class ExplorerRename
     private int[] runtimeId;
     private uint clipboardSequence;
     internal bool Background { get { return itemPath==null; } }
+    internal bool UsedNativeMenu { get; private set; }
     internal string[] Labels { get; private set; }
     internal bool[] Enabled { get; private set; }
     private static readonly string[] ItemVerbs={ "open","copy","cut","rename","recycle","more" };
@@ -30,6 +31,27 @@ internal sealed class ExplorerRename
     private delegate int ActiveView(IntPtr self, out IntPtr view);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int ItemObject(IntPtr self, uint scope, ref Guid iid, [MarshalAs(UnmanagedType.IDispatch)] out object result);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int ContextObject(IntPtr self,uint scope,ref Guid iid,out IntPtr result);
+    private ShellCommands ViewMenu()
+    {
+        dynamic windows=Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("9BA05972-F6A8-11CF-A442-00A0C90A8F39")));
+        object shell=null;
+        string cls=ExplorerRingNative.ClassOf(root);
+        if(cls=="CabinetWClass" || cls=="ExploreWClass") {
+            int count=windows.Count;
+            for(int i=0;i<count;i++) { dynamic w=windows.Item(i); if(new IntPtr((long)w.HWND)==root) { shell=w; break; } }
+        } else { object location=0,unused=null; int hwnd; shell=windows.FindWindowSW(ref location,ref unused,8,out hwnd,1); }
+        if(shell==null) throw new InvalidOperationException("Shell window unavailable");
+        IntPtr browser=IntPtr.Zero,sv=IntPtr.Zero,context=IntPtr.Zero;
+        try {
+            Guid service=BrowserService,iid=BrowserInterface;
+            Marshal.ThrowExceptionForHR(((ServiceProvider)shell).QueryService(ref service,ref iid,out browser));
+            Marshal.ThrowExceptionForHR(Slot<ActiveView>(browser,15)(browser,out sv));
+            iid=new Guid("000214E4-0000-0000-C000-000000000046");
+            Marshal.ThrowExceptionForHR(Slot<ContextObject>(sv,15)(sv,Background ? 0U : 1U,ref iid,out context));
+            var owned=context; context=IntPtr.Zero; return new ShellCommands(owned,root);
+        } finally { if(context!=IntPtr.Zero) Marshal.Release(context); if(sv!=IntPtr.Zero) Marshal.Release(sv); if(browser!=IntPtr.Zero) Marshal.Release(browser); }
+    }
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int RefreshView(IntPtr self);
     private static T Slot<T>(IntPtr p, int index) where T : class
     { return Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(Marshal.ReadIntPtr(p),index*IntPtr.Size),typeof(T)) as T; }
@@ -182,7 +204,38 @@ internal sealed class ExplorerRename
                 int count=selected.Count;
                 for(int i=count-1;i>=0;i--) doc.SelectItem(selected.Item(i),0);
             }
-            ShowOriginalMenu(); return;
+            ShellCommands menu;
+            try { menu=ViewMenu(); }
+            catch { ShowOriginalMenu(); return; }
+            using(menu) {
+                bool original;
+                var chosen=RingLab.ShowTouchMenu(menu,point,root,out original);
+                Validate();
+                if(original) { ShowOriginalMenu(); return; }
+                if(chosen==null) return;
+                string selectedVerb=chosen.Verb ?? "";
+                if(selectedVerb=="delete" && !Background) {
+                    if(MessageBox.Show(owner,"Переместить объект в корзину? Если Windows предложит безвозвратное удаление — отмените.","Ring menu",MessageBoxButtons.OKCancel,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.OK) return;
+                    ExplorerRingNative.SetForegroundWindow(root); Validate(); ShellCommands.Recycle(itemPath,root); return;
+                }
+                if(selectedVerb=="rename" && !Background) { doc.SelectItem(Match(doc,label),0x1f); return; }
+                if((selectedVerb=="paste" || selectedVerb=="pastelink") && clipboardSequence!=ShellCommands.GetClipboardSequenceNumber()) throw new InvalidOperationException("Clipboard changed");
+                // Unknown extension commands may be destructive. Require an
+                // explicit confirmation, never auto-dispatch an opaque verb.
+                if(String.IsNullOrEmpty(selectedVerb) || (selectedVerb!="open" && selectedVerb!="copy" && selectedVerb!="cut" && selectedVerb!="paste" && selectedVerb!="pastelink" && selectedVerb!="properties" && selectedVerb!="refresh")) {
+                    if(MessageBox.Show(owner,"Выполнить выбранную команду Shell?\n"+chosen.Text,"Ring menu",MessageBoxButtons.OKCancel,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.OK) return;
+                    ExplorerRingNative.SetForegroundWindow(root); Validate();
+                }
+                // Selected-items menu must still describe exactly the one
+                // originally verified item when dispatching its numeric ID.
+                if(!Background) {
+                    dynamic selected=doc.SelectedItems();
+                    if((int)selected.Count!=1 || !String.Equals((string)selected.Item(0).Path,itemPath,StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Menu selection changed");
+                }
+                menu.Execute(chosen);
+            }
+            return;
         }
         if(Background) {
             if(verb=="refresh") { Refresh(); return; }
@@ -226,6 +279,7 @@ internal sealed class ExplorerRename
         if(ExplorerRingNative.ResolveBridgeView(unchecked((ulong)root.ToInt64()),unchecked((ulong)child.ToInt64()))!=unchecked((ulong)view.ToInt64()))
             throw new InvalidOperationException("Menu target changed");
         if(!ExplorerRingNative.PostMessage(child,0x7b,child,ContextCoordinates(point))) throw new InvalidOperationException("Context menu request failed");
+        UsedNativeMenu=true;
     }
     private static IntPtr ContextCoordinates(Point p)
     {

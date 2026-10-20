@@ -29,11 +29,39 @@ internal sealed class ShellCommands : IDisposable
     [DllImport("user32.dll")] private static extern uint GetMenuState(IntPtr menu,uint id,uint flags);
     [DllImport("user32.dll")] internal static extern uint GetClipboardSequenceNumber();
     private IntPtr context,menu;
+    private IntPtr context2,context3;
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int MenuMessage(IntPtr self,uint msg,UIntPtr wp,IntPtr lp);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int MenuMessage2(IntPtr self,uint msg,UIntPtr wp,IntPtr lp,out IntPtr result);
+    [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] private struct MenuInfo
+    {
+        internal uint Size,Mask,Type,State,Id; internal IntPtr Sub,Checked,Unchecked,Data,Text;
+        internal uint Length; internal IntPtr Bitmap;
+    }
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern bool GetMenuItemInfo(IntPtr menu,uint position,bool byPosition,ref MenuInfo info);
+    internal sealed class Entry
+    {
+        internal string Text,Verb; internal uint Id; internal IntPtr Sub;
+        internal bool Enabled,Separator,Checked,Unsupported;
+    }
+    internal IntPtr Menu { get { return menu; } }
     private readonly Dictionary<string,uint> commands=new Dictionary<string,uint>(StringComparer.OrdinalIgnoreCase);
     private readonly IntPtr owner;
     private static T Slot<T>(IntPtr p,int index) where T:class
     { return Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(Marshal.ReadIntPtr(p),index*IntPtr.Size),typeof(T)) as T; }
     private static void Check(int hr) { Marshal.ThrowExceptionForHR(hr); }
+    internal ShellCommands(IntPtr ownedContext,IntPtr owner)
+    {
+        this.owner=owner; context=ownedContext;
+        try { BuildMenu(); } catch { Dispose(); throw; }
+    }
+    private void BuildMenu()
+    {
+        menu=CreatePopupMenu(); if(menu==IntPtr.Zero) throw new InvalidOperationException("Menu allocation failed");
+        Check(Slot<QueryMenu>(context,3)(context,menu,0,1,0x7fff,0));
+        Guid iid=new Guid("BCFCE0A0-EC17-11D0-8D10-00A0C90F2719"); Marshal.QueryInterface(context,ref iid,out context3);
+        iid=new Guid("000214F4-0000-0000-C000-000000000046"); Marshal.QueryInterface(context,ref iid,out context2);
+        ReadMenu(menu,0);
+    }
     internal ShellCommands(string path,bool background,IntPtr owner)
     {
         this.owner=owner;
@@ -49,9 +77,7 @@ internal sealed class ShellCommands : IDisposable
                 IntPtr child; Check(SHBindToParent(pidl,ref sf,out parent,out child));
                 Check(Slot<UiObject>(parent,10)(parent,owner,1,new[] { child },ref cm,IntPtr.Zero,out context));
             }
-            menu=CreatePopupMenu(); if(menu==IntPtr.Zero) throw new InvalidOperationException("Menu allocation failed");
-            Check(Slot<QueryMenu>(context,3)(context,menu,0,1,0x7fff,0));
-            ReadMenu(menu,0);
+            BuildMenu();
         } catch { Dispose(); throw; }
         finally {
             if(folder!=IntPtr.Zero) Marshal.Release(folder);
@@ -77,6 +103,44 @@ internal sealed class ShellCommands : IDisposable
         }
     }
     internal bool Has(string verb) { return commands.ContainsKey(verb); }
+    internal List<Entry> Entries(IntPtr popup,int position)
+    {
+        int initialized=0;
+        if(context3!=IntPtr.Zero) { IntPtr result; initialized=Slot<MenuMessage2>(context3,7)(context3,0x117,new UIntPtr(unchecked((ulong)popup.ToInt64())),new IntPtr(position),out result); }
+        else if(context2!=IntPtr.Zero) initialized=Slot<MenuMessage>(context2,6)(context2,0x117,new UIntPtr(unchecked((ulong)popup.ToInt64())),new IntPtr(position));
+        // Some handlers return E_FAIL for the already-built root or for a
+        // submenu they do not own. Never invoke an uninitialized lazy entry.
+        if(initialized<0 && popup!=menu) return new List<Entry> { new Entry { Text="Открыть в штатном меню…",Enabled=true,Unsupported=true } };
+        int count=GetMenuItemCount(popup);
+        if(count<0 || count>1024) throw new InvalidOperationException("Menu size refused");
+        var entries=new List<Entry>();
+        for(uint n=0;n<count;n++) {
+            IntPtr text=Marshal.AllocHGlobal(2048);
+            try {
+                var info=new MenuInfo { Size=(uint)Marshal.SizeOf(typeof(MenuInfo)),Mask=0x1|0x2|0x4|0x40|0x100,Text=text,Length=1023 };
+                if(!GetMenuItemInfo(popup,n,true,ref info)) throw new InvalidOperationException("Menu item unavailable");
+                string name=Marshal.PtrToStringUni(text,(int)info.Length);
+                var e=new Entry { Text=name.Replace("&&","\u0001").Replace("&","").Replace("\u0001","&"),Id=info.Id,Sub=info.Sub,
+                    Enabled=(info.State&3)==0,Checked=(info.State&8)!=0,Separator=(info.Type&0x800)!=0,
+                    Unsupported=(info.Type&0x100)!=0 || (String.IsNullOrEmpty(name) && (info.Type&0x800)==0) };
+                if(e.Id>=1 && e.Id<0x8000) e.Verb=Verb(e.Id-1);
+                entries.Add(e);
+            } finally { Marshal.FreeHGlobal(text); }
+        }
+        return entries;
+    }
+    private string Verb(uint offset)
+    {
+        IntPtr text=Marshal.AllocHGlobal(512);
+        try { Marshal.WriteInt16(text,0); return Slot<CommandString>(context,5)(context,new UIntPtr(offset),4,IntPtr.Zero,text,256)>=0 ? Marshal.PtrToStringUni(text) : null; }
+        finally { Marshal.FreeHGlobal(text); }
+    }
+    internal void Execute(Entry entry)
+    {
+        if(entry==null || !entry.Enabled || entry.Unsupported || entry.Separator || entry.Sub!=IntPtr.Zero || entry.Id<1 || entry.Id>=0x8000)
+            throw new InvalidOperationException("Menu command refused");
+        InvokeOffset(entry.Id-1);
+    }
     internal static void SelfTest()
     {
         if(Marshal.SizeOf(typeof(InvokeInfo))!=56) throw new Exception("Invoke ABI mismatch");
@@ -87,6 +151,15 @@ internal sealed class ShellCommands : IDisposable
             System.IO.File.WriteAllText(file,"isolated menu query only");
             using(var commands=new ShellCommands(file,false,IntPtr.Zero)) {
                 if(!commands.Has("copy") || !commands.Has("cut")) throw new Exception("File canonical clipboard verbs absent");
+                var items=commands.Entries(commands.Menu,0);
+                if(items.Count==0) throw new Exception("Touch menu empty");
+                bool copy=false;
+                for(int i=0;i<items.Count;i++) {
+                    if(items[i].Verb=="copy" && items[i].Enabled && !items[i].Unsupported) copy=true;
+                    if(items[i].Sub!=IntPtr.Zero && !items[i].Unsupported) commands.Entries(items[i].Sub,i);
+                }
+                if(!copy) throw new Exception("Copy entry not represented");
+                RingLab.TestTouchMenu(commands);
                 bool refused=false;
                 try { commands.Execute("ring-menu-nonexistent-verb"); } catch(InvalidOperationException) { refused=true; }
                 if(!refused) throw new Exception("Unknown verb accepted");
@@ -102,11 +175,15 @@ internal sealed class ShellCommands : IDisposable
         if(!commands.TryGetValue(verb,out id)) throw new InvalidOperationException("Shell command unavailable");
         // Invoke only an enabled command discovered in THIS menu. No localized
         // verb guessing and no fallback to a different verb/default operation.
+        InvokeOffset(id);
+    }
+    private void InvokeOffset(uint id)
+    {
         var info=new InvokeInfo { Size=(uint)Marshal.SizeOf(typeof(InvokeInfo)),Mask=0x100,Owner=owner,Verb=new IntPtr(id),Show=1 };
         Check(Slot<Invoke>(context,4)(context,ref info)); // CMIC_MASK_NOASYNC
     }
     public void Dispose()
-    { if(menu!=IntPtr.Zero) { DestroyMenu(menu); menu=IntPtr.Zero; } if(context!=IntPtr.Zero) { Marshal.Release(context); context=IntPtr.Zero; } }
+    { if(menu!=IntPtr.Zero) { DestroyMenu(menu); menu=IntPtr.Zero; } if(context3!=IntPtr.Zero) { Marshal.Release(context3); context3=IntPtr.Zero; } if(context2!=IntPtr.Zero) { Marshal.Release(context2); context2=IntPtr.Zero; } if(context!=IntPtr.Zero) { Marshal.Release(context); context=IntPtr.Zero; } }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int SetFlags(IntPtr self,uint flags);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int SetOwner(IntPtr self,IntPtr owner);

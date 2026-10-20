@@ -69,7 +69,7 @@ internal sealed partial class RingLab
         acrylic = new AcrylicSurface(Bounds,center,radius,darkMaterial);
         acrylic.Show();
         materialBlur = acrylic.EnableMaterial();
-        Log("MATERIAL requested=Acrylic apiAccepted="+materialBlur+" dark="+darkMaterial+" highContrast="+SystemInformation.HighContrast);
+        Log("MATERIAL requested=ClippedBlurTintGrain alphaTransport=DIB apiAccepted="+materialBlur+" dark="+darkMaterial+" highContrast="+SystemInformation.HighContrast);
         PresentOverlay();
         Show();
         // Original Shown handler reads monitor DPI, starts no timer.

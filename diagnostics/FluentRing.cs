@@ -17,6 +17,12 @@ internal sealed partial class RingLab
     [StructLayout(LayoutKind.Sequential)] private struct NativeSize { internal int X,Y; }
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr h);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr h,IntPtr dc);
+    [StructLayout(LayoutKind.Sequential)] private struct DibInfo
+    {
+        internal uint Size; internal int Width,Height; internal ushort Planes,Bits;
+        internal uint Compression,ImageSize; internal int XPels,YPels; internal uint Used,Important;
+    }
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateDIBSection(IntPtr dc,ref DibInfo info,uint usage,out IntPtr bits,IntPtr section,uint offset);
     [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
     [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc,IntPtr obj);
@@ -41,14 +47,52 @@ internal sealed partial class RingLab
         if(!visibleRing || !IsHandleCreated || Width<=0 || Height<=0) return;
         using(var bitmap=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb)) {
             using(var g=Graphics.FromImage(bitmap)) { g.SmoothingMode=SmoothingMode.AntiAlias; DrawFluentRing(g); }
+            PresentBitmap(Handle,Location,bitmap);
+        }
+    }
+    private static void PresentBitmap(IntPtr handle,Point location,Bitmap bitmap)
+    {
             IntPtr screen=GetDC(IntPtr.Zero), dc=IntPtr.Zero, image=IntPtr.Zero, old=IntPtr.Zero;
             try {
-                dc=CreateCompatibleDC(screen); image=bitmap.GetHbitmap(Color.FromArgb(0)); old=SelectObject(dc,image);
-                var dest=new PointNative { X=Left,Y=Top }; var size=new NativeSize { X=Width,Y=Height }; var origin=new PointNative();
+                dc=CreateCompatibleDC(screen);
+                IntPtr bits; image=AlphaDib(screen,bitmap,out bits);
+                if(dc==IntPtr.Zero) throw new InvalidOperationException("Alpha DC allocation failed");
+                old=SelectObject(dc,image);
+                var dest=new PointNative { X=location.X,Y=location.Y }; var size=new NativeSize { X=bitmap.Width,Y=bitmap.Height }; var origin=new PointNative();
                 var blend=new Blend { Alpha=255,Format=1 };
-                if(!UpdateLayeredWindow(Handle,screen,ref dest,ref size,dc,ref origin,0,ref blend,2))
+                if(!UpdateLayeredWindow(handle,screen,ref dest,ref size,dc,ref origin,0,ref blend,2))
                     throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             } finally { if(old!=IntPtr.Zero) SelectObject(dc,old); if(image!=IntPtr.Zero) DeleteObject(image); if(dc!=IntPtr.Zero) DeleteDC(dc); if(screen!=IntPtr.Zero) ReleaseDC(IntPtr.Zero,screen); }
+    }
+    private static IntPtr AlphaDib(IntPtr screen,Bitmap bitmap,out IntPtr bits)
+    {
+        var info=new DibInfo { Size=40,Width=bitmap.Width,Height=-bitmap.Height,Planes=1,Bits=32 };
+        IntPtr image=CreateDIBSection(screen,ref info,0,out bits,IntPtr.Zero,0);
+        if(image==IntPtr.Zero || bits==IntPtr.Zero) throw new InvalidOperationException("Alpha surface allocation failed");
+        try {
+            // GetHbitmap can flatten alpha into a background colour. Copy
+            // exact premultiplied BGRA into a top-down DIB instead.
+            var data=bitmap.LockBits(new Rectangle(0,0,bitmap.Width,bitmap.Height),ImageLockMode.ReadOnly,PixelFormat.Format32bppPArgb);
+            try {
+                var row=new byte[bitmap.Width*4];
+                for(int y=0;y<bitmap.Height;y++) {
+                    Marshal.Copy(IntPtr.Add(data.Scan0,y*data.Stride),row,0,row.Length);
+                    Marshal.Copy(row,0,IntPtr.Add(bits,y*row.Length),row.Length);
+                }
+            } finally { bitmap.UnlockBits(data); }
+            return image;
+        } catch { DeleteObject(image); throw; }
+    }
+    internal static void TestAlphaTransport()
+    {
+        using(var b=new Bitmap(2,2,PixelFormat.Format32bppPArgb)) {
+            b.SetPixel(1,0,Color.FromArgb(64,200,100,40)); b.SetPixel(0,1,Color.FromArgb(128,40,100,200));
+            IntPtr bits; IntPtr image=AlphaDib(IntPtr.Zero,b,out bits);
+            try {
+                var actual=new byte[16]; Marshal.Copy(bits,actual,0,16);
+                if(actual[3]!=0 || actual[7]!=64 || actual[11]!=128 || actual[15]!=0 ||
+                   actual[4]>64 || actual[5]>64 || actual[6]>64) throw new Exception("DIB alpha/top-down/premultiplication regression");
+            } finally { DeleteObject(image); }
         }
     }
     private GraphicsPath SectorPath(int i)
@@ -127,39 +171,49 @@ internal sealed partial class RingLab
     {
         [StructLayout(LayoutKind.Sequential)] private struct Policy { internal int State,Flags; internal uint Color; internal int Animation; }
         [StructLayout(LayoutKind.Sequential)] private struct Attribute { internal int Id; internal IntPtr Data; internal int Size; }
-        [StructLayout(LayoutKind.Sequential)] private struct Margins { internal int L,R,T,B; }
         [StructLayout(LayoutKind.Sequential)] private struct Power { internal byte AC,Flag,Percent,Saver; internal uint Life,FullLife; }
         [DllImport("user32.dll")] private static extern int SetWindowCompositionAttribute(IntPtr h,ref Attribute a);
-        [DllImport("dwmapi.dll")] private static extern int DwmExtendFrameIntoClientArea(IntPtr h,ref Margins m);
         [DllImport("dwmapi.dll")] private static extern int DwmIsCompositionEnabled(out bool enabled);
         [DllImport("kernel32.dll")] private static extern bool GetSystemPowerStatus(out Power status);
         private readonly bool dark;
+        private bool circular;
         internal AcrylicSurface(Rectangle bounds,PointF center,float radius,bool dark)
+            : this(bounds,dark)
+        {
+            circular=true;
+            using(var p=new GraphicsPath()) { p.AddEllipse(center.X-radius,center.Y-radius,radius*2,radius*2); Region=new Region(p); }
+        }
+        internal AcrylicSurface(Rectangle bounds,bool dark)
         {
             this.dark=dark; FormBorderStyle=FormBorderStyle.None; StartPosition=FormStartPosition.Manual;
             Bounds=bounds; BackColor=Color.Black; ShowInTaskbar=false; TopMost=true;
-            using(var p=new GraphicsPath()) { p.AddEllipse(center.X-radius,center.Y-radius,radius*2,radius*2); Region=new Region(p); }
         }
+        protected override void OnPaintBackground(PaintEventArgs e) { }
+        protected override void OnPaint(PaintEventArgs e) { }
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams { get { var p=base.CreateParams; p.ExStyle|=0x080000a0; return p; } } // transparent to input
         protected override void WndProc(ref Message m)
         { if(m.Msg==0x84) { m.Result=new IntPtr(-1); return; } if(m.Msg==0x21) { m.Result=new IntPtr(3); return; } base.WndProc(ref m); }
         internal bool EnableMaterial()
         {
-        if(SystemInformation.HighContrast || SystemInformation.TerminalServerSession) return false;
+            if(SystemInformation.HighContrast || SystemInformation.TerminalServerSession) return false;
             Power power; if(GetSystemPowerStatus(out power) && power.Saver!=0) return false;
             using(var k=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
                 if(k!=null && Convert.ToInt32(k.GetValue("EnableTransparency",1))==0) return false;
             bool enabled; if(DwmIsCompositionEnabled(out enabled)!=0 || !enabled) return false;
             // NO WinUI dependency, no registry writes. API acceptance does not
             // prove visible blur: actual appearance must be tested in console.
-            var policy=new Policy { State=4,Color=dark ? 0xB8262626U : 0xB8F3F3F3U };
+            // Win10 Acrylic accent (4) can ignore a nonrectangular window
+            // region. A circular surface uses clipped blur accent (3) plus
+            // our own tint/grain: custom Acrylic, not a rectangular accent.
+            var policy=new Policy { State=circular ? 3 : 4,Color=dark ? 0x70262626U : 0x70F3F3F3U };
             IntPtr ptr=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Policy)));
             try {
                 Marshal.StructureToPtr(policy,ptr,false);
                 var a=new Attribute { Id=19,Data=ptr,Size=Marshal.SizeOf(typeof(Policy)) };
-                var margins=new Margins { L=-1,R=-1,T=-1,B=-1 };
-                return DwmExtendFrameIntoClientArea(Handle,ref margins)==0 && SetWindowCompositionAttribute(Handle,ref a)!=0;
+                // Do not extend rectangular glass beyond the explicit region.
+                // Accent owns the backdrop; WinForms must never fill it black.
+                return SetWindowCompositionAttribute(Handle,ref a)!=0;
             } catch(EntryPointNotFoundException) { return false; }
             finally { Marshal.FreeHGlobal(ptr); }
         }

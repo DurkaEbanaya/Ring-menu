@@ -9,6 +9,7 @@
 | `RingLab.cs` | Общая геометрия/отрисовка и изолированный сенсорный стенд. Без `EXPLORER_RING` не подключается к Explorer. |
 | `ExplorerRingOverlay.cs` | Неактивирующее кольцо и подложка для отмены смещённого меню. |
 | `FluentRing.cs` | Per-pixel-alpha кольцо, отдельный DWM Acrylic backdrop, тема/иконки Windows, собственный Reveal и solid/high-contrast fallback. |
+| `TouchMoreMenu.cs` | Неподвижный крупный список «Ещё» с paging/back, lazy Shell submenus, Acrylic и переходом к оригиналу. |
 | `ExplorerRing.cs` | Контроллер временного перехвата; отслеживает подходящее активное окно, отключается через 3 минуты. |
 | `ExplorerRename.cs` | UI Automation hit test файла/пустого места, повторная проверка цели и диспетчер команд; историческое имя файла сохранено. |
 | `ShellCommands.cs` | Локальный Shell COM: проверка canonical verbs, копирование/вырезание/вставка, свойства; корзина через `IFileOperation`. |
@@ -19,7 +20,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v07.exe`; положить рядом `ExplorerBridge-v07.dll`.
+- `build-ExplorerRing.ps1`: `ExplorerRing-v08.exe`; положить рядом `ExplorerBridge-v08.dll`.
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -28,7 +29,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v07.exe --self-test
+.\ExplorerRing-v08.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -47,6 +48,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - «Ещё» на пустом месте: раскрыть «Вид», «Сортировка», «Создать»; сменить вид и создать тестовую папку. На файле: раскрыть доступное «Отправить» (без отправки данных), проверить «Свойства». Повторить в папке и на рабочем столе и снова вызвать кольцо после закрытия меню.
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
+
+### Дополнительно для 0.8
+
+- После физического теста 0.7 пользователь сообщил о прямоугольнике и непрозрачной поверхности, несмотря на `apiAccepted=True`. Сам по себе флаг не доказывает видимый эффект.
+- `TestAlphaTransport` проверяет реальные байты DIB после передачи: alpha 0/64/128, top-down расположение и premultiplication. Верхний слой не проходит через `GetHbitmap`; стандартный opaque background paint отключён. Circle backdrop использует accent blur (3) + tint/grain вместо rectangular acrylic (4), без frame extension. Список оставляет rectangular Acrylic.
+- Shell self-test читает реальные подписи/состояния своего временного файла, проверяет canonical copy, пробует инициализацию submenus без выполнения. Создаёт только скрытую поверхность списка и проверяет hit rows/отрисовку. Это не тест `IShellView.GetItemObject` реального рабочего стола/Explorer.
+- `Ещё` запрашивает live selection/background `IContextMenu` из того же Shell view. `IContextMenu2/3.HandleMenuMsg(2)` получает INITMENUPOPUP для lazy submenu. Ошибка root handler допускает чтение уже построенного root; ошибка submenu безопасно предлагает native fallback, не выполняет неинициализированную команду. Ownerdraw также не имитируется. Никаких menu labels/command IDs в журналах.
+- Вручную повторить проверки 0.7 и дополнительно: список 44-DIP строки, страницы в обе стороны, возврат на предыдущий уровень, выбор только при UP в той же строке, отмена снаружи, 30-секундный timeout, fallback к исходному меню; «Вид/Сортировка/Создать» в папке и на desktop. Убедиться, что после списка кольцо не заблокировано на 5 секунд.
+- Во время custom menu Shell dispatch и native takeovers приостановлены, modal loop не перезапускает controller Tick. По окончании цель проверяется заново. Delete направляется в recycle/confirmation; неизвестные/не-whitelisted команды Shell требуют подтверждения (это не sandbox сторонних расширений).
 
 `Test-ShellTransfer.ps1`: **только изолированный сеанс 0 по SSH**, `powershell -STA -NoProfile -ExecutionPolicy Bypass -File .\Test-ShellTransfer.ps1`. Отказывается работать в интерактивном console/RDP-сеансе и при непустом буфере. Создаёт уникальные собственные тестовые папки/файл, выполняет Shell copy/paste и cut/paste, проверяет содержимое и наличие/исчезновение источника, очищает только свой тест и изолированный буфер. На Windows 10 этот тест прошёл. Это не проверка сенсорного меню и не тест пользовательского буфера.
 

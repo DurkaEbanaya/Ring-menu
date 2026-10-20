@@ -24,14 +24,14 @@ internal static class ExplorerRingNative
         internal int X, Y;
         internal uint OsTime, Reserved;
     }
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern uint BeginObservation(uint thread);
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern uint BridgePulse(uint enabled);
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern void EndObservation();
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v07.dll")] internal static extern uint BridgeDiagnosticDrops();
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern uint BeginObservation(uint thread);
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern uint BridgePulse(uint enabled);
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern void EndObservation();
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v08.dll")] internal static extern uint BridgeDiagnosticDrops();
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
@@ -77,7 +77,7 @@ internal sealed class ExplorerRing : Form
 
     internal ExplorerRing()
     {
-        Text = "Ring menu 0.7 — Fluent · Acrylic · Reveal";
+        Text = "Ring menu 0.8 — прозрачность · крупное Ещё";
         Font = new Font("Segoe UI", 11);
         ClientSize = new Size(880, 540);
         StartPosition = FormStartPosition.CenterScreen;
@@ -104,7 +104,7 @@ internal sealed class ExplorerRing : Form
         status.SetBounds(24,440,830,85); status.Text="Не подключено."; Controls.Add(status);
         string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"explorer-ring-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log");
         log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=false;
-        Write("START version=0.7 holdMs=450 acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
+        Write("START version=0.8 holdMs=450 alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
         overlay=RingLab.CreateOverlay();
         overlay.Selected += delegate(int sector) {
             if(sector>=0 && target!=null && target.Enabled[sector]) {
@@ -176,7 +176,10 @@ internal sealed class ExplorerRing : Form
             ExplorerRingNative.BridgePulse(0); timer.Stop();
             try {
                 if(action=="more") { morePending=true; moreUntil=DateTime.UtcNow.AddSeconds(5); menuPopups=0; }
-                command.Execute(pendingSector,this); result="Запрошено: "+command.Labels[pendingSector]+"."; Write("COMMAND_REQUESTED action="+action);
+                command.Execute(pendingSector,this);
+                if(action=="more" && !command.UsedNativeMenu) { morePending=false; Write("TOUCH_MORE_CLOSED nativeFallback=false"); }
+                else if(action=="more") moreUntil=DateTime.UtcNow.AddSeconds(5);
+                result="Запрошено: "+command.Labels[pendingSector]+"."; Write("COMMAND_REQUESTED action="+action);
             }
             catch(Exception e) { if(action=="more") morePending=false; result="Действие отменено или недоступно: "+command.Labels[pendingSector]+"."; Write("COMMAND_REFUSED action="+action+" type="+e.GetType().Name); }
             finally { if(running) timer.Start(); }
@@ -327,6 +330,7 @@ internal sealed class ExplorerRing : Form
         try {
             ExplorerRename.SelfTest();
             ShellCommands.SelfTest();
+            RingLab.TestAlphaTransport();
             ViewTest.Run();
             var gui=new ExplorerRingNative.GuiInfo { Size=(uint)Marshal.SizeOf(typeof(ExplorerRingNative.GuiInfo)) };
             if(gui.Size!=72 || !ExplorerRingNative.GetGUIThreadInfo(ExplorerRingNative.GetCurrentThreadId(),ref gui) || (gui.Flags & 0x1c)!=0)
@@ -363,7 +367,7 @@ internal sealed class ExplorerRing : Form
                 ExplorerRingNative.EndObservation();
                 ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero);
                 if(ExplorerRingNative.DrainObservation(items,128,out lost)!=0) throw new Exception("Events after unhook");
-                File.WriteAllText(path,"PASS v0.7: target matching/ambiguity/virtual-item/identity/context-action guards; context coordinate packing; isolated Shell menu copy/cut/properties query; unknown verb rejected; 56-byte invocation ABI; invalid retarget rejected; initial/recreated view resolution; reject navigation/other-root/null; bridge DLL load; GET/CALL; shared queue; preserved response; synthetic submenu count/position telemetry without display; same-process takeover refused; unhook. Events="+n+"\r\n");
+                File.WriteAllText(path,"PASS v0.8: DIB exact alpha/top-down/premultiplication; hidden touch menu render/row geometry; Shell menu labels/canonical copy/submenu enumeration without execution; target matching/ambiguity/virtual-item/identity/context-action guards; context coordinate packing; unknown verb rejected; 56-byte invocation ABI; GUI menu state ABI/query; invalid retarget rejected; initial/recreated view resolution; reject navigation/other-root/null; bridge DLL load; GET/CALL; shared queue; preserved response; synthetic submenu count/position telemetry without display; same-process takeover refused; unhook. Events="+n+"\r\n");
                 return 0;
             }
         } catch(Exception e) { File.WriteAllText(path,"FAIL: "+e+"\r\n"); return 1; }
