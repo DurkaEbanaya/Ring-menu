@@ -12,7 +12,7 @@ using Microsoft.Win32;
 internal sealed partial class RingLab
 {
     private bool materialBlur, darkMaterial;
-    private readonly bool[] whiteInk=new bool[7];
+    private bool whiteInk;
     private bool contrastReady;
     // One bounded sample BEFORE any ring/backdrop/veil is visible. Do not
     // resample our own surface, save pixels, or log pixel/colour values.
@@ -23,12 +23,7 @@ internal sealed partial class RingLab
         try {
             using(var sample=new Bitmap(Width,Height,PixelFormat.Format32bppArgb)) {
                 using(var g=Graphics.FromImage(sample)) g.CopyFromScreen(Location,Point.Empty,Size,CopyPixelOperation.SourceCopy);
-                for(int i=0;i<7;i++) {
-                    double angle=(-90+i*60)*Math.PI/180; float mid=(inner+radius)/2;
-                    float x=i==6 ? center.X : center.X+(float)Math.Cos(angle)*mid;
-                    float y=i==6 ? center.Y : center.Y+(float)Math.Sin(angle)*mid;
-                    whiteInk[i]=WhiteInkFor(sample,new Rectangle((int)(x-38*scale),(int)(y-27*scale),(int)(76*scale),(int)(54*scale)));
-                }
+                whiteInk=WhiteInkFor(sample,new Rectangle((int)(center.X-radius),(int)(center.Y-radius),(int)(2*radius),(int)(2*radius)));
             }
             contrastReady=true;
         } catch(System.ComponentModel.Win32Exception) { }
@@ -48,14 +43,25 @@ internal sealed partial class RingLab
         // Pick the greater WCAG contrast against the underlying linear luma.
         double l=sum/count; return 1.05/(l+.05)>=(l+.05)/.05;
     }
-    private Color ReadableInk(int sector)
-    { return SystemInformation.HighContrast ? SystemColors.WindowText : (contrastReady ? whiteInk[sector] : darkMaterial) ? Color.White : Color.Black; }
+    private Color ReadableInk()
+    { return SystemInformation.HighContrast ? SystemColors.WindowText : (contrastReady ? whiteInk : darkMaterial) ? Color.White : Color.Black; }
     internal static void TestContrast()
     {
         using(var b=new Bitmap(80,40)) using(var g=Graphics.FromImage(b)) {
-            g.Clear(Color.Black); g.FillRectangle(Brushes.White,40,0,40,40);
-            if(!WhiteInkFor(b,new Rectangle(0,0,40,40)) || WhiteInkFor(b,new Rectangle(40,0,40,40)))
-                throw new Exception("Per-region black/white contrast regression");
+            g.Clear(Color.Black);
+            if(!WhiteInkFor(b,new Rectangle(0,0,80,40))) throw new Exception("Dark background contrast regression");
+            g.Clear(Color.White);
+            if(WhiteInkFor(b,new Rectangle(0,0,80,40))) throw new Exception("Light background contrast regression");
+            using(var painter=CreateOverlay()) {
+                try {
+                    painter.contrastReady=true;
+                    foreach(bool white in new[] { false,true }) {
+                        painter.whiteInk=white;
+                        if(!SystemInformation.HighContrast && painter.ReadableInk().ToArgb()!=(white ? Color.White : Color.Black).ToArgb())
+                            throw new Exception("Uniform ring foreground regression");
+                    }
+                } finally { painter.log.Dispose(); }
+            }
             g.Clear(Color.FromArgb(117,117,117));
             if(!WhiteInkFor(b,new Rectangle(0,0,80,40))) throw new Exception("Linear luminance threshold regression");
         }
@@ -94,7 +100,7 @@ internal sealed partial class RingLab
     {
         if(!visibleRing || !IsHandleCreated || Width<=0 || Height<=0) return;
         using(var bitmap=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb)) {
-            using(var g=Graphics.FromImage(bitmap)) { g.SmoothingMode=SmoothingMode.AntiAlias; DrawFluentRing(g); }
+            using(var g=Graphics.FromImage(bitmap)) { g.SmoothingMode=SmoothingMode.AntiAlias; g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit; DrawFluentRing(g); }
             PresentBitmap(Handle,Location,bitmap);
         }
     }
@@ -153,7 +159,7 @@ internal sealed partial class RingLab
     {
         bool hc=SystemInformation.HighContrast;
         Color surface=hc ? SystemColors.Window : darkMaterial ? Color.FromArgb(38,38,38) : Color.FromArgb(243,243,243);
-        Color text=hc ? SystemColors.WindowText : darkMaterial ? Color.White : Color.FromArgb(28,28,28);
+        Color text=ReadableInk();
         var disk=new RectangleF(center.X-radius,center.Y-radius,2*radius,2*radius);
         // Soft elevation remains inside the existing 9-DIP safety margin.
         for(int n=8;n>=1;n--) using(var b=new SolidBrush(Color.FromArgb(3,0,0,0)))
@@ -198,13 +204,13 @@ internal sealed partial class RingLab
             }
             double angle=(-90+i*60)*Math.PI/180; float mid=(inner+radius)/2;
             float x=center.X+(float)Math.Cos(angle)*mid, y=center.Y+(float)Math.Sin(angle)*mid;
-            Color ink=hc ? (hover==i ? SystemColors.HighlightText : SystemColors.WindowText) : ReadableInk(i);
+            Color ink=hc ? (hover==i ? SystemColors.HighlightText : SystemColors.WindowText) : text;
             if(!enabled[i]) ink=Color.FromArgb(145,ink);
             DrawFluentIcon(g,names[i],x,y-11*scale,ink);
-            DrawText(g,names[i],x,y+15*scale,names[i].Length>12 ? 10 : 11,ink,true);
+            DrawText(g,names[i],x,y+15*scale,names[i].Length>12 ? 11 : 12,ink,true);
         }
         using(var pen=new Pen(Color.FromArgb(hc ? 255 : 80,text),scale)) g.DrawEllipse(pen,disk);
-        Color centerInk=ReadableInk(6);
+        Color centerInk=text;
         DrawText(g,contextLabel,center.X,center.Y-9*scale,14,centerInk,true);
         DrawText(g,"Отмена",center.X,center.Y+13*scale,11,centerInk,true);
     }

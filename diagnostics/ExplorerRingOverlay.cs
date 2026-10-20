@@ -67,6 +67,7 @@ internal sealed partial class RingLab
         }
         LoadFluentPalette();
         SampleRingContrast();
+        if(contrastReady) darkMaterial=whiteInk;
         acrylic = new AcrylicSurface(Bounds,center,radius,darkMaterial);
         acrylic.Show();
         materialBlur = acrylic.EnableMaterial();

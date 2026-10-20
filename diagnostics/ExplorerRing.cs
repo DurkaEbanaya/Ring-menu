@@ -77,7 +77,7 @@ internal sealed class ExplorerRing : Form
 
     internal ExplorerRing()
     {
-        Text = "Ring menu 0.9.1 — без подложек · крупное Ещё";
+        Text = "Ring menu 0.10 — Segoe UI · компактное Ещё";
         Font = new Font("Segoe UI", 11);
         ClientSize = new Size(880, 540);
         StartPosition = FormStartPosition.CenterScreen;
@@ -104,7 +104,7 @@ internal sealed class ExplorerRing : Form
         status.SetBounds(24,440,830,85); status.Text="Не подключено."; Controls.Add(status);
         string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"explorer-ring-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log");
         log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=false;
-        Write("START version=0.9.1 labelBackings=false holdMs=450 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
+        Write("START version=0.10 uniformInk=true compactMore=true labelBackings=false holdMs=450 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
         overlay=RingLab.CreateOverlay();
         overlay.Selected += delegate(int sector) {
             if(sector>=0 && target!=null && target.Enabled[sector]) {
@@ -369,7 +369,7 @@ internal sealed class ExplorerRing : Form
                 ExplorerRingNative.EndObservation();
                 ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero);
                 if(ExplorerRingNative.DrainObservation(items,128,out lost)!=0) throw new Exception("Events after unhook");
-                File.WriteAllText(path,"PASS v0.9.1: per-region luminance/black-white contrast; DIB exact alpha/top-down/premultiplication; hidden touch menu render/row geometry; local Shell file/background menus and submenu enumeration without execution; target matching/ambiguity/virtual-item/identity/context-action guards; context coordinate packing; unknown verb rejected; 56-byte invocation ABI; GUI menu state ABI/query; invalid retarget rejected; initial/recreated view resolution; reject navigation/other-root/null; bridge DLL load; GET/CALL; shared queue; preserved response; synthetic submenu count/position telemetry without display; same-process takeover refused; unhook. Events="+n+"\r\n");
+                File.WriteAllText(path,"PASS v0.10: uniform foreground/luminance; Segoe UI availability; compact variable-height rows; swipe scroll without command; scroll clamping/last item; hidden submenu/back; DIB exact alpha/top-down/premultiplication; local Shell file/background menus without execution; target guards; coordinate packing; unknown verb rejection; invocation/menu state ABI; view resolution; bridge GET/CALL/shared queue/preserved response/submenu telemetry/unhook. Events="+n+"\r\n");
                 return 0;
             }
         } catch(Exception e) { File.WriteAllText(path,"FAIL: "+e+"\r\n"); return 1; }

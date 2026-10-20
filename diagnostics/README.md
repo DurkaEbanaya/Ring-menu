@@ -9,7 +9,7 @@
 | `RingLab.cs` | Общая геометрия/отрисовка и изолированный сенсорный стенд. Без `EXPLORER_RING` не подключается к Explorer. |
 | `ExplorerRingOverlay.cs` | Неактивирующее кольцо и подложка для отмены смещённого меню. |
 | `FluentRing.cs` | Per-pixel-alpha кольцо, отдельный DWM Acrylic backdrop, тема/иконки Windows, собственный Reveal и solid/high-contrast fallback. |
-| `TouchMoreMenu.cs` | Неподвижный крупный список «Ещё» с paging/back, lazy Shell submenus, Acrylic и переходом к оригиналу. |
+| `TouchMoreMenu.cs` | Компактный список «Ещё» с пиктограммами, swipe/wheel scroll, back, lazy Shell submenus, Acrylic и переходом к оригиналу. |
 | `ExplorerRing.cs` | Контроллер временного перехвата; отслеживает подходящее активное окно, отключается через 3 минуты. |
 | `ExplorerRename.cs` | UI Automation hit test файла/пустого места, повторная проверка цели и диспетчер команд; историческое имя файла сохранено. |
 | `ShellCommands.cs` | Локальный Shell COM: проверка canonical verbs, копирование/вырезание/вставка, свойства; корзина через `IFileOperation`. |
@@ -20,7 +20,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v091.exe`; положить рядом неизменённую `ExplorerBridge-v09.dll` (0.9.1 — только UI-исправление).
+- `build-ExplorerRing.ps1`: `ExplorerRing-v010.exe`; положить рядом неизменённую `ExplorerBridge-v09.dll` (0.10 — только UI-исправление).
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -29,7 +29,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v091.exe --self-test
+.\ExplorerRing-v010.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -49,7 +49,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
-### Дополнительно для 0.9
+### Дополнительно для 0.10
+
+- Один общий `whiteInk`, не массив цветов секторов. `TestContrast` проверяет black/white выбор и единый foreground на синтетических данных. Настоящий экран тесты не снимают. Segoe UI уже был указан в старом DrawText; теперь alpha-layer renderer явно использует `AntiAliasGridFit`, мелкие подписи кольца увеличены до 11/12 DIP. Текст списка 13 DIP, без ClearType RGB-fringing на прозрачном фоне.
+- Строки 32 DIP, header 32, footer 28, разделители 7, поля 6, ширина 320 DIP. Self-test проверяет компактные hit rows, помещение 25 команд при рабочей высоте ≥900 DIP, короткий separator, swipe без Choice, clamp в обе стороны, достижимость последнего из 100 пунктов, раскрытие/возврат подменю, наличие Segoe UI. Тесты скрытые; реальный touch и визуальное качество требуют ручной проверки.
+- Страницы удалены. Scroll offset в пикселях, текущая позиция сохраняется в parent stack. Движение контакта более 7 DIP ставит dragging до отпускания, не выполняет команду даже после возврата в исходную строку. Cancel/capture loss сбрасывают выбор. Монохромные MDL2 icons по verb; для неизвестного расширения — generic icon, не произвольный извлечённый bitmap.
+- Пользователь подтвердил работу «Ещё» перед этим обновлением; это не отдельный протокол всех view/sort/extension-команд.
+
+### История 0.9
 
 - `TestContrast`: разные светлая/тёмная части одного синтетического bitmap и линейная яркость около порога. В 0.9.1 декоративные подложки удалены; гарантии контраста подложки больше нет. Настоящий экран в self-test/скрытых тестах не снимается. Во время пользовательского вызова ограниченный bitmap фона обрабатывается и освобождается до показа собственных поверхностей; нет сохранения/передачи/логирования пикселей.
 - Причина native fallback 0.8 воспроизведена: `ViewMenu` вернул `COMException 0x80040155` (нет зарегистрированного proxy для запрошенного интерфейса). Ничего в реестре не регистрируется. Новая версия использует локальные Shell-объекты проверенного пути. `MORE_CONTEXT_FAILED` содержит только тип/HRESULT, `TOUCH_MORE_OPEN` — источник/контекст, `TOUCH_MENU_ENUM` — уровень/число, `TOUCH_SUBMENU_FALLBACK` — HRESULT, не подписи/ID.
