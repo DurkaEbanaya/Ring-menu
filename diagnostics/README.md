@@ -10,7 +10,8 @@
 | `ExplorerRingOverlay.cs` | Неактивирующее кольцо и подложка для отмены смещённого меню. |
 | `FluentRing.cs` | Per-pixel-alpha кольцо, отдельный DWM Acrylic backdrop, тема/иконки Windows, собственный Reveal и solid/high-contrast fallback. |
 | `TouchMoreMenu.cs` | Компактный список «Ещё» с пиктограммами, swipe/wheel scroll, back, lazy Shell submenus, Acrylic и переходом к оригиналу. |
-| `ExplorerRing.cs` | Контроллер временного перехвата; отслеживает подходящее активное окно, отключается через 3 минуты. |
+| `ExplorerRing.cs` | Контроллер временного перехвата; отслеживает подходящее активное окно, фоновая возобновляемая сессия с heartbeat. |
+| `RingPreferences.cs`, `SettingsWindow.cs`, `SettingsPreview.cs` | XML-настройки/ограничения, трей и opt-in HKCU автозапуск, обновляемый синтетический пример и безопасная DWM-демонстрация без команд. |
 | `ExplorerRename.cs` | UI Automation hit test файла/пустого места, повторная проверка цели и диспетчер команд; историческое имя файла сохранено. |
 | `ShellCommands.cs` | Локальный Shell COM: проверка canonical verbs, копирование/вырезание/вставка, свойства; корзина через `IFileOperation`. |
 | `ExplorerBridge.c`, `ExplorerBridge.h`, `BridgePolicy.h` | Экспериментальный native перехват touch, shared-memory transport, политика жеста. |
@@ -20,16 +21,17 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v014.exe`; положить рядом `ExplorerBridge-v014.dll`. Native hold threshold также изменён, смешивать версии нельзя.
+- `build-ExplorerRing.ps1`: `ExplorerRing-v015.exe`; положить рядом `ExplorerBridge-v015.dll`. Настройки native и ABI изменены, смешивать версии нельзя.
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
+- `Package-Release.ps1`: ZIP с проверенной парой 0.15 и ASCII-инструкцией. Отказывается перезаписывать существующий архив; пользовательские файлы/логи не включает.
 
 Версионные выходные DLL оставлены для совместимости имён при разработке, но **пересобираются из текущего кода**, а не являются историческими релизами. Используйте явно указанную пару EXE/DLL. Не заменяйте DLL запущенной программы.
 
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v014.exe --self-test
+.\ExplorerRing-v015.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -49,7 +51,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
-### Дополнительно для 0.14
+### Дополнительно для 0.15
+
+- `--self-test`: XML roundtrip и clamp настроек без записи конфигурации/реестра, независимость черновика, изменение preview bitmap/сохранность alpha, отказ неверных native-порогов, повторная установка hooks после снятия. Все проверки — собственные окна, не Explorer.
+- `Test-BridgePolicy` дополнительно проверяет каждый порог 100–1500 мс: нет захвата за 1 мс до порога, есть на пороге. По умолчанию 200 мс; прежние drag/cancel/secondary guards сохранены.
+- `Test-Resident.ps1` — отдельный 185-секундный тест продления bounded lease: hooks только своего скрытого потока, после 180 секунд проверяется получение события. Прежние экземпляры программы должны быть закрыты из-за exclusive mapping.
+- `ExplorerRing-v015.exe --screenshots` рисует реальные настройки в отдельном Windows-сеансе с тестовым фоном. Не устанавливает hooks в Explorer, не сохраняет настройки/автозапуск. Результаты в `screenshots`; DWM не снимается и в синтетическом preview не обещается точность системного blur.
+- Фоновый heartbeat продлевает native lease на 180 секунд. При отсутствии heartbeat более 1500 мс новые захваты запрещены. Уже захваченный контакт по-прежнему ограничен 15 секундами; потеря критического события останавливает перехват. 10-мс резервный timer не заменяет event-driven wake/MOVE.
+- Ручная проверка: сохранение/перезапуск настроек, отсутствие изменения действующего жеста, изменения Acrylic/Reveal в preview и реальном кольце, DPI 200%, pause/resume, закрытие в трей, выход с прижатым пальцем, закрытие целевой папки/повторный запуск Explorer, сеанс дольше 3 минут. Автозапуск — только осознанной кнопкой; вход в Windows и фактический DWM требуют интерактивной проверки.
+- Проверено на Windows: компиляция без предупреждений, self-test (включая атомарную замену собственного временного XML и изменение preview), 49 placements/294 hits, session-0 copy/cut/paste, 185-секундный resident lease. Режим снимков также проверяет независимость UI-черновика и закрытие окна без уничтожения формы; затем закрывает приложение полностью. Автозапуск в тестах не включается. Эти проверки не заменяют физический touch/DPI/autostart login test.
+
+### История 0.14
 
 - Порог native и standalone 200 мс, progress denominator 200. `Test-BridgePolicy` проверяет отсутствие захвата в 199 мс и захват в 200 мс; short tap завершается до порога. Slop, защита secondary/cancel, очереди и файлы не менялись. Вручную проверить обычный тап, медленное начало drag и случайные вызовы: уменьшение порога сокращает время для начала обычного перемещения.
 

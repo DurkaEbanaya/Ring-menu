@@ -59,6 +59,12 @@ int main(void) {
     assert(bridgePolicy(&p,0x245,330,0x26016,100,100,4700,28,1)==0);
     bridgePolicy(&p,0x24c,330,0,100,100,4800,28,1);
     assert(!p.id);
+    for(unsigned hold=100;hold<=1500;hold+=100) {
+        p=(BRIDGE_POLICY){0};
+        bridgePolicyConfigured(&p,0x246,400,0x2004,100,100,1000,28,1,hold);
+        assert(bridgePolicyConfigured(&p,0x245,400,0x2004,100,100,1000+hold-1,28,1,hold)==0);
+        assert(bridgePolicyConfigured(&p,0x245,400,0x2004,100,100,1000+hold,28,1,hold)==1);
+    }
     puts("PASS: threshold, continuation, release, short tap, pre-hold drag, multi-touch pre-hold, eligibility loss, nonprimary, tick wrap, cancellation; desktop drag LEAVE replay, in-contact/unrelated LEAVE, missing-UP recovery, owned-contact preservation");
     return 0;
 }

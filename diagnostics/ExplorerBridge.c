@@ -10,13 +10,21 @@ EXPORT U32 BeginBridge(U32 thread, U64 root, U64 view) {
     U32 error = BeginObservation(thread);
     if (error) return error;
     shared->root = root; shared->view = view;
+    shared->sessionSerial++;
     shared->heartbeat = GetTickCount(); shared->enabled = 1;
     return 0;
 }
 EXPORT U32 BridgePulse(U32 enabled) {
     if (!shared) return 0;
     shared->heartbeat = GetTickCount(); shared->enabled = enabled;
+    /* Resident sessions renew a bounded lease, not an infinite deadline. */
+    if (shared->resident && shared->active) shared->deadline=GetTickCount()+180000;
     return shared->owned;
+}
+EXPORT U32 ConfigureBridge(U32 hold, U32 tolerance, U32 resident) {
+    if (!shared || shared->owned || hold<100 || hold>1500 || tolerance<6 || tolerance>40 || resident>1) return 87;
+    shared->holdMs=hold; shared->moveToleranceDip=tolerance; shared->resident=resident;
+    return 0;
 }
 EXPORT U32 BridgeDiagnosticDrops(void) {
     return shared ? shared->diagnosticDropped : 0;

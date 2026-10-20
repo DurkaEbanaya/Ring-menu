@@ -5,8 +5,8 @@ typedef struct {
     unsigned id, start, phase;
     int x, y;
 } BRIDGE_POLICY;
-static int bridgePolicy(BRIDGE_POLICY *p, unsigned msg, unsigned id,
-    unsigned flags, int x, int y, unsigned now, unsigned slop, int eligible)
+static int bridgePolicyConfigured(BRIDGE_POLICY *p, unsigned msg, unsigned id,
+    unsigned flags, int x, int y, unsigned now, unsigned slop, int eligible, unsigned hold)
 {
     if (msg == 0x246) {
         /* Drag/drop can end an unowned contact in a nested shell loop without
@@ -40,8 +40,14 @@ static int bridgePolicy(BRIDGE_POLICY *p, unsigned msg, unsigned id,
     }
     long long dx = (long long)x - p->x, dy = (long long)y - p->y;
     if (!eligible || dx*dx + dy*dy > (long long)slop*slop) p->phase = 3;
-    if (p->phase == 1 && msg == 0x245 && now - p->start >= 200) {
+    if (p->phase == 1 && msg == 0x245 && now - p->start >= hold) {
         p->phase = 2; return 1;
     }
     return 0;
 }
+#ifndef EXPLORER_BRIDGE
+static int bridgePolicy(BRIDGE_POLICY *p, unsigned msg, unsigned id,
+    unsigned flags, int x, int y, unsigned now, unsigned slop, int eligible) {
+    return bridgePolicyConfigured(p,msg,id,flags,x,y,now,slop,eligible,200);
+}
+#endif

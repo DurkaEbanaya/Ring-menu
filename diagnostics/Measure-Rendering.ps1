@@ -1,4 +1,4 @@
-param([string]$Executable='ExplorerRing-v014.exe',[int]$Frames=30)
+param([string]$Executable='ExplorerRing-v015.exe',[int]$Frames=30)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 $assembly=[Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot $Executable))

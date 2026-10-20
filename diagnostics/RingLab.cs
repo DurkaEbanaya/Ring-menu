@@ -51,8 +51,10 @@ internal sealed partial class RingLab : Form
         BackColor = Color.FromArgb(239, 243, 247);
         DoubleBuffered = true;
         KeyPreview = true;
-        log = writeLog ? new StreamWriter(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-            "ring-lab-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log"), false, System.Text.Encoding.UTF8) : new StreamWriter(Stream.Null);
+        string logDirectory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RingMenu","logs");
+        if(writeLog) Directory.CreateDirectory(logDirectory);
+        log = writeLog ? new StreamWriter(Path.Combine(logDirectory,
+            "ring-lab-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".log"), false, System.Text.Encoding.UTF8) : new StreamWriter(Stream.Null);
         log.AutoFlush = true;
         Shown += delegate {
             scale = GetDpiForWindow(Handle) / 96f;
@@ -73,7 +75,7 @@ internal sealed partial class RingLab : Form
         FormClosed += delegate { timer.Stop(); Log("STOP"); log.Dispose(); };
     }
 
-    private void Log(string s) { log.WriteLine(clock.ElapsedMilliseconds.ToString("D8") + " " + s); }
+    private void Log(string s) { if(log.BaseStream.Position<10*1024*1024) log.WriteLine(clock.ElapsedMilliseconds.ToString("D8") + " " + s); }
     private static double Distance(PointF a, PointF b)
     { double x = a.X - b.X, y = a.Y - b.Y; return Math.Sqrt(x*x + y*y); }
     private static float Clamp(float x, float min, float max) { return Math.Max(min, Math.Min(max, x)); }

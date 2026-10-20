@@ -230,7 +230,7 @@ internal sealed partial class RingLab
                 g.SmoothingMode=SmoothingMode.AntiAlias; g.TextRenderingHint=TextRenderingHint.AntiAliasGridFit;
                 Color surface=SystemInformation.HighContrast ? SystemColors.Window : painter.darkMaterial ? Color.FromArgb(38,38,38) : Color.FromArgb(243,243,243);
                 Color text=painter.ReadableInk();
-                g.Clear(Color.FromArgb(painter.materialBlur ? 24 : 255,surface));
+                g.Clear(Color.FromArgb(painter.SurfaceAlpha,surface));
                 DrawGlyph(g,parents.Count==0 ? "\uE711" : "\uE72B",pad+16*dpi,pad+header/2,text,14);
                 DrawLabel(g,parents.Count==0 ? "Ещё" : "Назад",new RectangleF(pad+34*dpi,pad,Width-pad*2-40*dpi,header),text,13);
                 var state=g.Save(); g.SetClip(new Rectangle(pad,firstRow,Width-2*pad,viewport));

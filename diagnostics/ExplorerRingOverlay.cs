@@ -13,6 +13,8 @@ internal sealed partial class RingLab
     internal event Action<string> OverlayCancelled;
     internal bool AwaitingNextTouch { get { return visibleRing && fixedMode && !waitInitialUp; } }
     internal bool OverlayVisible { get { return visibleRing; } }
+    internal void PreviewWait()
+    { active=0; fixedMode=true; waitInitialUp=false; PresentOverlay(); }
     internal uint OverlayContact { get { return active; } }
     internal static RingLab CreateOverlay()
     { return CreateOverlayCore(true); }
@@ -38,8 +40,11 @@ internal sealed partial class RingLab
         }
     }
     internal void BeginOverlay(uint id, Point screen, uint dpi)
+    { BeginOverlayCore(id,screen,dpi,RingPreferences.Current); }
+    private void BeginOverlayCore(uint id,Point screen,uint dpi,RingPreferences preferences)
     {
         DismissOverlay("New contact", false);
+        appearance=preferences.Copy();
         Bounds = Screen.FromPoint(screen).WorkingArea;
         scale = (dpi == 0 ? 96 : dpi) / 96f;
         radius = 148*scale; inner = 58*scale; margin = 14*scale; guard = 26*scale;
@@ -71,6 +76,7 @@ internal sealed partial class RingLab
         SampleRingContrast();
         if(contrastReady) darkMaterial=whiteInk;
         acrylic = new AcrylicSurface(Bounds,center,radius,darkMaterial);
+        acrylic.Preferences=appearance.Copy();
         acrylic.Show();
         materialBlur = acrylic.EnableMaterial();
         Log("MATERIAL requested=ClippedBlurTintGrain alphaTransport=DIB adaptiveContrast="+contrastReady+" apiAccepted="+materialBlur+" dark="+darkMaterial+" highContrast="+SystemInformation.HighContrast);

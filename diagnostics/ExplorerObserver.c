@@ -36,6 +36,7 @@ typedef struct {
     U32 diagnosticDropped;
     U64 notifyWindow;
     volatile I32 notifyPending;
+    U32 holdMs, moveToleranceDip, resident, sessionSerial;
 #endif
 } SHARED;
 _Static_assert(sizeof(MSG) == 48, "MSG x64 ABI");
@@ -166,7 +167,20 @@ EXPORT void EndObservation(void) {
     getHook = callHook = 0;
 }
 EXPORT U32 BeginObservation(U32 thread) {
-    if (!thread || mapping || shared) return 87;
+    if (!thread) return 87;
+    if (shared && !shared->active && !getHook && !callHook) {
+        /* Re-arm our existing exclusive mapping. Never replace another
+         * process's mapping or leave an owned contact behind. */
+#ifdef EXPLORER_BRIDGE
+        if(shared->owned) return 170;
+        shared->root=shared->view=0; shared->enabled=0;
+        shared->notifyPending=0; shared->notifyWindow=0;
+#endif
+        shared->thread=thread; shared->deadline=GetTickCount()+180000;
+        shared->active=1;
+        goto install;
+    }
+    if (mapping || shared) return 87;
     mapping = CreateFileMappingW((PTR)-1, 0, 4, 0, sizeof(SHARED), mappingName);
     U32 error = GetLastError();
     if (!mapping) return error;
@@ -175,6 +189,7 @@ EXPORT U32 BeginObservation(U32 thread) {
     if (!shared) { error = GetLastError(); CloseHandle(mapping); mapping = 0; return error; }
     shared->magic = 0x544d5331; shared->thread = thread;
     shared->deadline = GetTickCount() + 180000; shared->active = 1;
+install:
     getHook = SetWindowsHookExW(3, (PTR)ObserveGetMessage, module, thread);
     if (!getHook) { error = GetLastError(); EndObservation(); return error; }
     callHook = SetWindowsHookExW(4, (PTR)ObserveCallWndProc, module, thread);

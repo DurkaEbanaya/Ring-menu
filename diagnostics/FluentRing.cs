@@ -24,6 +24,9 @@ internal sealed partial class RingLab
     private uint presentedContact;
     private bool presentedWait,framePresented;
     private int renderPass;
+    internal RingPreferences appearance=RingPreferences.Current.Copy();
+    private int RevealAlpha(int value) { return value*appearance.RevealIntensity/100; }
+    private int SurfaceAlpha { get { return materialBlur && !SystemInformation.HighContrast ? appearance.SurfaceOpacity*255/100 : 255; } }
     internal static void WarmRenderer()
     {
         // Pay JIT/GDI+ initialization before arming, never at first gesture.
@@ -197,7 +200,7 @@ internal sealed partial class RingLab
         using(var g=Graphics.FromImage(revealFill)) using(var glow=new GraphicsPath()) {
             SetupGraphics(g); glow.AddEllipse(c.X-r,c.Y-r,2*r,2*r);
             using(var b=new PathGradientBrush(glow)) {
-                b.CenterPoint=c; b.CenterColor=Color.FromArgb(76,accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
+                b.CenterPoint=c; b.CenterColor=Color.FromArgb(RevealAlpha(76),accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
                 g.FillPath(b,glow);
             }
         }
@@ -205,7 +208,7 @@ internal sealed partial class RingLab
     private void DrawCachedReveal(Graphics g)
     {
         if(hover>=0 && hover<6) using(var b=new SolidBrush(Color.FromArgb(65,accent))) g.FillPath(b,sectorCache[hover]);
-        if(active==0 || waitInitialUp) return;
+        if(active==0 || waitInitialUp || appearance.RevealIntensity==0) return;
         var state=g.Save();
         try {
             g.SetClip(revealClip,CombineMode.Intersect);
@@ -215,7 +218,7 @@ internal sealed partial class RingLab
         using(var glow=new GraphicsPath()) {
             float r=110*scale; glow.AddEllipse(last.X-r,last.Y-r,2*r,2*r);
             using(var b=new PathGradientBrush(glow)) {
-                b.CenterPoint=last; b.CenterColor=Color.FromArgb(230,accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
+                b.CenterPoint=last; b.CenterColor=Color.FromArgb(RevealAlpha(230),accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
                 using(var pen=new Pen(b,1.6f*scale)) g.DrawPath(pen,revealClip);
             }
         }
@@ -319,7 +322,10 @@ internal sealed partial class RingLab
         // Soft elevation remains inside the existing 9-DIP safety margin.
         for(int n=8;n>=1;n--) using(var b=new SolidBrush(Color.FromArgb(3,0,0,0)))
             g.FillEllipse(b,disk.X-n*scale,disk.Y-n*scale+scale,disk.Width+2*n*scale,disk.Height+2*n*scale);
-        using(var b=new SolidBrush(Color.FromArgb(materialBlur && !hc ? 32 : 255,surface))) g.FillEllipse(b,disk);
+        // Circular blur accent does not consistently honor GradientColor.
+        // Own tint guarantees that its slider affects the production ring.
+        if(materialBlur && !hc) using(var b=new SolidBrush(Color.FromArgb(appearance.AcrylicTint*255/100,surface))) g.FillEllipse(b,disk);
+        using(var b=new SolidBrush(Color.FromArgb(SurfaceAlpha,surface))) g.FillEllipse(b,disk);
         if(materialBlur && !hc) {
             // Very subtle, deterministic grain. No stored/captured background.
             var state=g.Save();
@@ -329,14 +335,14 @@ internal sealed partial class RingLab
                 for(int n=0;n<128;n++) {
                     seed=1664525*seed+1013904223; int x=(int)(seed & 31);
                     seed=1664525*seed+1013904223; int y=(int)((seed>>8) & 31);
-                    grain.SetPixel(x,y,(n & 1)==0 ? Color.FromArgb(8,255,255,255) : Color.FromArgb(5,0,0,0));
+                    grain.SetPixel(x,y,(n & 1)==0 ? Color.FromArgb(8*appearance.GrainIntensity/100,255,255,255) : Color.FromArgb(5*appearance.GrainIntensity/100,0,0,0));
                 }
                 using(var texture=new TextureBrush(grain)) { texture.ScaleTransform(scale,scale); g.FillEllipse(texture,disk); }
             }
             g.Restore(state);
         }
         }
-        bool reveal=active!=0 && !waitInitialUp && !hc;
+        bool reveal=active!=0 && !waitInitialUp && !hc && appearance.RevealIntensity!=0;
         for(int i=0;i<6;i++) using(var path=SectorPath(i)) {
             if(dynamic && hover==i) using(var b=new SolidBrush(hc ? SystemColors.Highlight : Color.FromArgb(65,accent))) g.FillPath(b,path);
             if(background) using(var pen=new Pen(hc ? SystemColors.WindowText : Color.FromArgb(darkMaterial ? 50 : 36,text),scale)) g.DrawPath(pen,path);
@@ -345,7 +351,7 @@ internal sealed partial class RingLab
                 using(var glow=new GraphicsPath()) {
                     float r=94*scale; glow.AddEllipse(last.X-r,last.Y-r,2*r,2*r);
                     using(var b=new PathGradientBrush(glow)) {
-                        b.CenterPoint=last; b.CenterColor=Color.FromArgb(76,accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
+                        b.CenterPoint=last; b.CenterColor=Color.FromArgb(RevealAlpha(76),accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
                         g.FillPath(b,glow);
                     }
                 }
@@ -353,7 +359,7 @@ internal sealed partial class RingLab
                 using(var glow=new GraphicsPath()) {
                     float r=110*scale; glow.AddEllipse(last.X-r,last.Y-r,2*r,2*r);
                     using(var b=new PathGradientBrush(glow)) {
-                        b.CenterPoint=last; b.CenterColor=Color.FromArgb(230,accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
+                        b.CenterPoint=last; b.CenterColor=Color.FromArgb(RevealAlpha(230),accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
                         using(var pen=new Pen(b,1.6f*scale)) g.DrawPath(pen,path);
                     }
                 }
@@ -390,6 +396,7 @@ internal sealed partial class RingLab
         [DllImport("dwmapi.dll")] private static extern int DwmIsCompositionEnabled(out bool enabled);
         [DllImport("kernel32.dll")] private static extern bool GetSystemPowerStatus(out Power status);
         private readonly bool dark;
+        internal RingPreferences Preferences=RingPreferences.Current.Copy();
         private bool circular;
         internal AcrylicSurface(Rectangle bounds,PointF center,float radius,bool dark)
             : this(bounds,dark)
@@ -410,7 +417,7 @@ internal sealed partial class RingLab
         { if(m.Msg==0x84) { m.Result=new IntPtr(-1); return; } if(m.Msg==0x21) { m.Result=new IntPtr(3); return; } base.WndProc(ref m); }
         internal bool EnableMaterial()
         {
-            if(SystemInformation.HighContrast || SystemInformation.TerminalServerSession) return false;
+            if(!Preferences.Acrylic || SystemInformation.HighContrast || SystemInformation.TerminalServerSession) return false;
             Power power; if(GetSystemPowerStatus(out power) && power.Saver!=0) return false;
             using(var k=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
                 if(k!=null && Convert.ToInt32(k.GetValue("EnableTransparency",1))==0) return false;
@@ -420,7 +427,7 @@ internal sealed partial class RingLab
             // Win10 Acrylic accent (4) can ignore a nonrectangular window
             // region. A circular surface uses clipped blur accent (3) plus
             // our own tint/grain: custom Acrylic, not a rectangular accent.
-            var policy=new Policy { State=circular ? 3 : 4,Color=dark ? 0x70262626U : 0x70F3F3F3U };
+            var policy=new Policy { State=circular ? 3 : 4,Color=((uint)(Preferences.AcrylicTint*255/100)<<24) | (dark ? 0x00262626U : 0x00F3F3F3U) };
             IntPtr ptr=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Policy)));
             try {
                 Marshal.StructureToPtr(policy,ptr,false);

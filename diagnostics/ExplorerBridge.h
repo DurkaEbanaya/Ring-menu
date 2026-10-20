@@ -16,6 +16,8 @@ static BRIDGE_POLICY policy;
 static U32 tailUntil, tailId, ownedAt;
 static PTR ownedWindow;
 static U64 policyRoot;
+static U32 policySession;
+static U32 contactHold=200, contactSlop=14;
 static U32 lastSuppressedMove;
 static void notifyBridge(SHARED *s) {
     if (s->notifyWindow && __sync_val_compare_and_swap(&s->notifyPending, 0, 1) == 0)
@@ -75,7 +77,8 @@ static void bridgeMessage(MSG *m) {
     SHARED *s = connect();
     U32 now = GetTickCount();
     if (!s || !s->active || s->thread != GetCurrentThreadId()) return;
-    if (policyRoot != s->root) {
+    if (policyRoot != s->root || policySession != s->sessionSerial) {
+        policySession=s->sessionSerial;
         policyRoot = s->root;
         policy.id = policy.phase = 0; tailUntil = 0;
     }
@@ -129,9 +132,14 @@ static void bridgeMessage(MSG *m) {
         }
     }
     U32 dpi = GetDpiForWindow((PTR)s->root);
-    U32 slop = (14 * (dpi ? dpi : 96) + 48) / 96;
+    U32 tolerance=s->moveToleranceDip ? s->moveToleranceDip : 14;
+    U32 slop = (tolerance * (dpi ? dpi : 96) + 48) / 96;
+    /* Settings changed in the UI never shorten/lengthen a live candidate. */
+    if(msg==0x246 && policy.phase!=2 && (!policy.id || (p.flags&0x2000))) {
+        contactHold=s->holdMs ? s->holdMs : 200; contactSlop=slop;
+    }
     U32 priorId = policy.id, priorPhase = policy.phase;
-    int action = bridgePolicy(&policy, msg, id, p.flags, p.pixel.x, p.pixel.y, now, slop, eligible);
+    int action = bridgePolicyConfigured(&policy, msg, id, p.flags, p.pixel.x, p.pixel.y, now, contactSlop, eligible, contactHold);
     if (priorId && priorPhase != 2 &&
         ((msg == 0x246 && priorId != id && policy.id == id) ||
          ((msg == 0x24a || msg == 0x24c) && !policy.id)))
