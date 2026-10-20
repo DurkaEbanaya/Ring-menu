@@ -155,8 +155,6 @@ internal sealed partial class RingLab
                 Color surface=SystemInformation.HighContrast ? SystemColors.Window : painter.darkMaterial ? Color.FromArgb(38,38,38) : Color.FromArgb(243,243,243);
                 Color text=SystemInformation.HighContrast ? SystemColors.WindowText : painter.darkMaterial ? Color.White : Color.FromArgb(25,25,25);
                 g.Clear(Color.FromArgb(painter.materialBlur ? 24 : 255,surface));
-                // Stable contrast for the large list even over mixed wallpaper.
-                using(var b=new SolidBrush(Color.FromArgb(200,surface))) g.FillRectangle(b,pad,pad,Width-2*pad,Height-2*pad);
                 DrawRow(g,parents.Count==0 ? "Ещё · закрыть" : "‹ Назад",pad,text,false);
                 for(int i=0;i<shown && offset+i<entries.Count;i++) {
                     var e=entries[offset+i]; int y=firstRow+i*row;

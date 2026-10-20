@@ -50,18 +50,6 @@ internal sealed partial class RingLab
     }
     private Color ReadableInk(int sector)
     { return SystemInformation.HighContrast ? SystemColors.WindowText : (contrastReady ? whiteInk[sector] : darkMaterial) ? Color.White : Color.Black; }
-    private void ReadableBacking(Graphics g,float x,float y,float width,float height,Color ink)
-    {
-        if(SystemInformation.HighContrast) return;
-        var r=new RectangleF(x-width/2,y-height/2,width,height); float d=12*scale;
-        using(var p=new GraphicsPath()) {
-            p.AddArc(r.Left,r.Top,d,d,180,90); p.AddArc(r.Right-d,r.Top,d,d,270,90);
-            p.AddArc(r.Right-d,r.Bottom-d,d,d,0,90); p.AddArc(r.Left,r.Bottom-d,d,d,90,90); p.CloseFigure();
-            // >=4.5:1 even over an arbitrary changing backdrop, not merely an
-            // average-pixel promise. Acrylic remains visible around each label.
-            using(var b=new SolidBrush(Color.FromArgb(190,ink.R==255 ? Color.Black : Color.White))) g.FillPath(b,p);
-        }
-    }
     internal static void TestContrast()
     {
         using(var b=new Bitmap(80,40)) using(var g=Graphics.FromImage(b)) {
@@ -70,8 +58,6 @@ internal sealed partial class RingLab
                 throw new Exception("Per-region black/white contrast regression");
             g.Clear(Color.FromArgb(117,117,117));
             if(!WhiteInkFor(b,new Rectangle(0,0,80,40))) throw new Exception("Linear luminance threshold regression");
-            // Worst case: opaque white beneath a black backing, and vice versa.
-            if(1.05/(Linear(65)+.05)<4.5 || (Linear(190)+.05)/.05<4.5) throw new Exception("Backing contrast too low");
         }
     }
     private Color accent = Color.FromArgb(0,120,215);
@@ -213,15 +199,12 @@ internal sealed partial class RingLab
             double angle=(-90+i*60)*Math.PI/180; float mid=(inner+radius)/2;
             float x=center.X+(float)Math.Cos(angle)*mid, y=center.Y+(float)Math.Sin(angle)*mid;
             Color ink=hc ? (hover==i ? SystemColors.HighlightText : SystemColors.WindowText) : ReadableInk(i);
-            using(var f=new Font("Segoe UI",(names[i].Length>12 ? 10 : 11)*scale,FontStyle.Regular,GraphicsUnit.Pixel))
-                ReadableBacking(g,x,y+2*scale,Math.Max(44*scale,g.MeasureString(names[i],f).Width+12*scale),57*scale,ink);
             if(!enabled[i]) ink=Color.FromArgb(145,ink);
             DrawFluentIcon(g,names[i],x,y-11*scale,ink);
             DrawText(g,names[i],x,y+15*scale,names[i].Length>12 ? 10 : 11,ink,true);
         }
         using(var pen=new Pen(Color.FromArgb(hc ? 255 : 80,text),scale)) g.DrawEllipse(pen,disk);
         Color centerInk=ReadableInk(6);
-        ReadableBacking(g,center.X,center.Y+2*scale,70*scale,49*scale,centerInk);
         DrawText(g,contextLabel,center.X,center.Y-9*scale,14,centerInk,true);
         DrawText(g,"Отмена",center.X,center.Y+13*scale,11,centerInk,true);
     }
