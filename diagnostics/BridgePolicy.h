@@ -40,7 +40,7 @@ static int bridgePolicy(BRIDGE_POLICY *p, unsigned msg, unsigned id,
     }
     long long dx = (long long)x - p->x, dy = (long long)y - p->y;
     if (!eligible || dx*dx + dy*dy > (long long)slop*slop) p->phase = 3;
-    if (p->phase == 1 && msg == 0x245 && now - p->start >= 450) {
+    if (p->phase == 1 && msg == 0x245 && now - p->start >= 300) {
         p->phase = 2; return 1;
     }
     return 0;

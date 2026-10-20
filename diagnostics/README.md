@@ -20,7 +20,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v012.exe`; положить рядом `ExplorerBridge-v012.dll`. В 0.12 изменён также native transport, смешивать версии нельзя.
+- `build-ExplorerRing.ps1`: `ExplorerRing-v013.exe`; положить рядом `ExplorerBridge-v013.dll`. Native hold threshold также изменён, смешивать версии нельзя.
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -29,7 +29,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v012.exe --self-test
+.\ExplorerRing-v013.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -49,7 +49,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
-### Дополнительно для 0.12
+### Дополнительно для 0.13
+
+- Native и standalone hold 300 мс; политика проверяется на 299/300 мс. Сохранены 14-DIP early-drag guard, short tap, secondary/cancel/recovery, точный UP и auto-stop.
+- `ExplorerRename` владеет подготовленным файловым Shell menu как IDisposable. `Capture` передаёт владение уже построенным объектом, `TakePreparedMore` отдаёт его ровно один раз, только при неизменном clipboard sequence. Между жестами/целями нет кэша; background не переиспользует folder-object menu. Контроллер освобождает объект при отмене, ошибке capture, стопе, отрицательном выборе и после любой команды. Shell self-test проверяет все три lifetime-ветки и симулирует изменившийся sequence без изменения буфера.
+- `Validate(out exactItem)` возвращает объект из того же полного прохода проверки. More/обычные файловые команды используют его вместо второго `Match` непосредственно после Validate. Проверка UIA runtime/name, foreground/view/folder/path/existence/selection и последующая проверка после закрытия списка сохранены. Rename/delete/clipboard/unknown-extension protections не отключены.
+- `MORE_TIMING stage=validatedSelected` теперь включает начальный Validate (раньше stopwatch начинался после него); нельзя напрямую сравнивать это число со старой версией. `MORE_CONTEXT_REUSED value=True/False` показывает reuse без имён/путей. `Measure-Rendering` дополнен изолированным take того же собственного меню; тест не выполняет команду. Замер: build 55.82/50.99/53.90 мс, reuse 3.004/0.011/0.008 мс; это не touch-to-visible latency. Полный путь и background требуют физической проверки.
+- Windows compile, --self-test, 49 placements/294 hits и session-0 Shell transfer пройдены. Вручную: быстрый тап/drag, удержание 300 мс без ложных вызовов, «Ещё» на файле/фоне, подменю и clipboard change при открытом кольце, углы и три минуты.
+
+### История 0.12
 
 - Градиент заливки Reveal и геометрия секторов кэшируются на время кольца; общий border gradient создаётся один раз на кадр вместо шести. Disabled-сектора и центр исключены из clip. Высокий контраст сохраняет прежнюю полную отрисовку. Прозрачность, шрифт, один цвет и отсутствие подложек сохранены.
 - Native producer отправляет coalesced `PostMessage`-уведомление, не ждёт ответа UI. Уведомление — только сигнал прочитать очередь, не источник координат/команд. Controller проверяет потери и таймауты до действия, защищён от повторного входа. 10-мс timer остаётся резервом; heartbeat/3 минуты/UP/cancel safety не отменены. Грубый 16-мс MOVE throttle убран, соседние MOVE объединяются самой очередью; UP остаётся точным. Это требует физической проверки нагрузки/стабильности, не обещание частоты FPS.

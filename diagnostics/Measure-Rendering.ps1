@@ -1,4 +1,4 @@
-param([string]$Executable='ExplorerRing-v012.exe',[int]$Frames=30)
+param([string]$Executable='ExplorerRing-v013.exe',[int]$Frames=30)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 $assembly=[Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot $Executable))
@@ -68,6 +68,19 @@ try {
                 $popup=$shell.GetProperty('Menu',$flags).GetValue($commands,$null)
                 $entries=$shell.GetMethod('Entries',$flags).Invoke($commands,@($popup,0))
                 'SHELL run={0} buildMs={1:F2} entriesMs={2:F2} count={3}' -f $i,$build,$watch.Elapsed.TotalMilliseconds,$entries.Count
+                $targetType=$assembly.GetType('ExplorerRename',$true)
+                $take=$targetType.GetMethod('TakePreparedMore',$flags)
+                if($null -ne $take) {
+                    $target=[Activator]::CreateInstance($targetType,$true)
+                    try {
+                        $targetType.GetField('preparedMore',$flags).SetValue($target,$commands)
+                        $seq=$shell.GetMethod('GetClipboardSequenceNumber',$static).Invoke($null,@())
+                        $targetType.GetField('clipboardSequence',$flags).SetValue($target,$seq)
+                        $watch.Restart(); $reused=$take.Invoke($target,@())
+                        if(-not [object]::ReferenceEquals($commands,$reused)) { throw 'Menu not reused' }
+                        'SHELL_REUSE run={0} ms={1:F3} sameTargetOnly=true noCommand=true' -f $i,$watch.Elapsed.TotalMilliseconds
+                    } finally { $target.Dispose() }
+                }
             } finally { $commands.Dispose() }
         }
     } finally { [IO.File]::Delete($file); [IO.Directory]::Delete($path) }

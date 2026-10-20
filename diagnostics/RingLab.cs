@@ -62,7 +62,7 @@ internal sealed partial class RingLab : Form
         };
         timer.Interval = 20;
         timer.Tick += delegate {
-            if (armed && clock.ElapsedMilliseconds - downAt >= 450) OpenRing();
+            if (armed && clock.ElapsedMilliseconds - downAt >= 300) OpenRing();
             else if (armed) Invalidate();
         };
         timer.Start();
@@ -258,7 +258,7 @@ internal sealed partial class RingLab : Form
         DrawText(g, message, ClientSize.Width/2f, 98*scale, 15, Color.FromArgb(0,100,175), true);
         if (armed)
         {
-            float progress = Math.Min(1, (clock.ElapsedMilliseconds-downAt)/450f);
+            float progress = Math.Min(1, (clock.ElapsedMilliseconds-downAt)/300f);
             using (var pen = new Pen(Color.FromArgb(0,120,212), 3*scale))
                 g.DrawArc(pen, anchor.X-22*scale,anchor.Y-22*scale,44*scale,44*scale,-90,360*progress);
         }

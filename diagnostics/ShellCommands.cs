@@ -159,6 +159,7 @@ internal sealed class ShellCommands : IDisposable
         System.IO.Directory.CreateDirectory(path);
         try {
             System.IO.File.WriteAllText(file,"isolated menu query only");
+            ExplorerRename.TestPreparedMore(file);
             using(var commands=new ShellCommands(file,false,IntPtr.Zero)) {
                 if(!commands.Has("copy") || !commands.Has("cut")) throw new Exception("File canonical clipboard verbs absent");
                 var items=commands.Entries(commands.Menu,0);

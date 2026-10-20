@@ -24,16 +24,16 @@ internal static class ExplorerRingNative
         internal int X, Y;
         internal uint OsTime, Reserved;
     }
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint BeginObservation(uint thread);
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint BridgePulse(uint enabled);
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern void EndObservation();
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint BridgeDiagnosticDrops();
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint SetBridgeNotify(ulong hwnd);
-    [DllImport("ExplorerBridge-v012.dll")] internal static extern uint TestBridgeWake(ulong hwnd);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BeginBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BeginObservation(uint thread);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern ulong ResolveBridgeView(ulong root, ulong hwnd);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BridgePulse(uint enabled);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern void EndObservation();
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint DrainObservation([Out] Event[] events, uint capacity, out uint dropped);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint RetargetBridge(uint thread, ulong root, ulong view);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint BridgeDiagnosticDrops();
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint SetBridgeNotify(ulong hwnd);
+    [DllImport("ExplorerBridge-v013.dll")] internal static extern uint TestBridgeWake(ulong hwnd);
     [DllImport("user32.dll")] internal static extern uint MsgWaitForMultipleObjectsEx(uint count,IntPtr handles,uint milliseconds,uint mask,uint flags);
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern IntPtr WindowFromPoint(Point point);
@@ -82,7 +82,7 @@ internal sealed class ExplorerRing : Form
 
     internal ExplorerRing()
     {
-        Text = "Ring menu 0.12 — события без ожидания таймера";
+        Text = "Ring menu 0.13 — удержание 300 мс · быстрый Ещё";
         Font = new Font("Segoe UI", 11);
         ClientSize = new Size(880, 540);
         StartPosition = FormStartPosition.CenterScreen;
@@ -91,7 +91,7 @@ internal sealed class ExplorerRing : Form
             "1. Закройте предыдущие диагностические программы.\n" +
             "2. Откройте папку с ненужным тестовым файлом.\n" +
             "3. Нажмите «Подключить» и переключитесь в папку за 8 секунд.\n" +
-            "4. Удержите файл: через 450 мс ожидается кольцо.\n" +
+            "4. Удержите файл: через 300 мс ожидается кольцо.\n" +
             "5. В центре: ведите в сектор и отпустите. У края: отпустите,\n" +
             "    затем коснитесь сектора. На пустом месте — другое меню.\n\n" +
             "Проверяем: нет второго штатного меню и перетаскивания;\n" +
@@ -109,7 +109,7 @@ internal sealed class ExplorerRing : Form
         status.SetBounds(24,440,830,85); status.Text="Не подключено."; Controls.Add(status);
         string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"explorer-ring-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log");
         log=new StreamWriter(path,false,new UTF8Encoding(true)); log.AutoFlush=false;
-        Write("START version=0.12 eventWake=true cachedReveal=true cachedRendering=true uniformInk=true compactMore=true labelBackings=false holdMs=450 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
+        Write("START version=0.13 gestureMenuReuse=true eventWake=true cachedReveal=true cachedRendering=true uniformInk=true compactMore=true labelBackings=false holdMs=300 adaptiveContrast=true localShellMenu=true alphaTransport=DIB touchMore=true acrylicRequested=true reveal=true shellActions=true background=true queuePriority=true dragRecovery=true desktop=true dynamicView=true session="+Process.GetCurrentProcess().SessionId+" abi="+Marshal.SizeOf(typeof(ExplorerRingNative.Event)));
         overlay=RingLab.CreateOverlay();
         var warmWatch=Stopwatch.StartNew();
         RingLab.WarmRenderer();
@@ -117,10 +117,10 @@ internal sealed class ExplorerRing : Form
         overlay.Selected += delegate(int sector) {
             if(sector>=0 && target!=null && target.Enabled[sector]) {
                 pendingCommand=target; pendingSector=sector; commandAt=DateTime.UtcNow.AddMilliseconds(sector==5 ? 0 : 300); result="Ожидается действие Windows…";
-            } else result="Отменено — действие не выбрано или цель не подтверждена.";
+            } else { result="Отменено — действие не выбрано или цель не подтверждена."; if(target!=null) target.Dispose(); }
             Write("RESULT sector="+sector+" commandQueued="+(pendingCommand!=null)); target=null;
         };
-        overlay.OverlayCancelled += delegate(string why) { cancelledContact=true; target=null; pendingCommand=null; Write("CANCEL "+why); };
+        overlay.OverlayCancelled += delegate(string why) { cancelledContact=true; ClearTargets(); Write("CANCEL "+why); };
         timer.Interval=10; timer.Tick += Tick;
         FormClosing += delegate(object sender,FormClosingEventArgs e) {
             if (running && nativeOwned!=0) { e.Cancel=true; RequestStop("Close deferred until release"); }
@@ -128,6 +128,11 @@ internal sealed class ExplorerRing : Form
         FormClosed += delegate { StopNow("Close"); overlay.Close(); overlay.Dispose(); log.Dispose(); };
     }
     private void Write(string s) { log.WriteLine(DateTime.Now.ToString("O")+" "+s); }
+    private void ClearTargets()
+    {
+        if(target!=null) { target.Dispose(); target=null; }
+        if(pendingCommand!=null) { pendingCommand.Dispose(); pendingCommand=null; }
+    }
     protected override void WndProc(ref Message m)
     {
         // A wake is only a hint: the native queue is the sole source of input.
@@ -202,7 +207,7 @@ internal sealed class ExplorerRing : Form
                 result="Запрошено: "+command.Labels[pendingSector]+"."; Write("COMMAND_REQUESTED action="+action);
             }
             catch(Exception e) { if(action=="more") morePending=false; result="Действие отменено или недоступно: "+command.Labels[pendingSector]+"."; Write("COMMAND_REFUSED action="+action+" type="+e.GetType().Name); }
-            finally { if(running) timer.Start(); }
+            finally { command.Dispose(); if(running) timer.Start(); }
         }
         if(overlay.OverlayVisible && (!foreground || !ExplorerRingNative.IsWindow(root) || DateTime.UtcNow-ringAt>TimeSpan.FromSeconds(20)))
         { cancelledContact=true; overlay.DismissOverlay("Focus/window/20s timeout",true); }
@@ -234,7 +239,7 @@ internal sealed class ExplorerRing : Form
                 var point=new Point(e.X,e.Y);
                 if(e.Message==1) {
                     cancelledContact=stopping || ExplorerRingNative.GetForegroundWindow()!=root; ringAt=DateTime.UtcNow;
-                    target=null;
+                    ClearTargets();
                     if(!cancelledContact) {
                         ulong view=ExplorerRingNative.ResolveBridgeView(unchecked((ulong)root.ToInt64()),e.Hwnd);
                         try {
@@ -243,7 +248,7 @@ internal sealed class ExplorerRing : Form
                             overlay.Configure(target.Labels,target.Enabled,target.Background);
                             overlay.BeginOverlay(e.Id,point,ExplorerRingNative.GetDpiForWindow(root));
                         }
-                        catch(Exception ex) { cancelledContact=true; target=null; overlay.DismissOverlay("Target/material unavailable",false); Write("TARGET_REFUSED type="+ex.GetType().Name); result="Цель не подтверждена; действие не выполнено."; }
+                        catch(Exception ex) { cancelledContact=true; ClearTargets(); overlay.DismissOverlay("Target/material unavailable",false); Write("TARGET_REFUSED type="+ex.GetType().Name); result="Цель не подтверждена; действие не выполнено."; }
                     }
                     Write("TAKEOVER cleanup=WM_POINTERCAPTURECHANGED experimental=true");
                 } else if(e.Message==2 && !cancelledContact) {
@@ -277,7 +282,7 @@ internal sealed class ExplorerRing : Form
     private void RequestStop(string reason)
     {
         if(stopped) return;
-        Write("STOP_REQUEST "+reason); waiting=false; target=null; pendingCommand=null;
+        Write("STOP_REQUEST "+reason); waiting=false; ClearTargets();
         if(!stopping) { stoppingAt=DateTime.UtcNow; stopReason=reason; }
         stopping=true;
         overlay.DismissOverlay("Stopping",false); cancelledContact=true;
@@ -287,6 +292,7 @@ internal sealed class ExplorerRing : Form
     private void StopNow(string reason)
     {
         if(stopped) return;
+        ClearTargets();
         ExplorerRingNative.EndObservation();
         if(running) Drain();
         stopped=true; running=false; waiting=false; timer.Stop();
@@ -411,7 +417,7 @@ internal sealed class ExplorerRing : Form
                 ExplorerRingNative.EndObservation();
                 ExplorerRingNative.SendMessage(h,0x2cc,IntPtr.Zero,IntPtr.Zero);
                 if(ExplorerRingNative.DrainObservation(items,128,out lost)!=0) throw new Exception("Events after unhook");
-                File.WriteAllText(path,"PASS v0.12: wake window validation; uniform foreground/luminance; Segoe UI availability; compact variable-height rows; swipe scroll without command; scroll clamping/last item; hidden submenu/back; DIB exact alpha/top-down/premultiplication; local Shell file/background menus without execution; target guards; coordinate packing; unknown verb rejection; invocation/menu state ABI; view resolution; bridge GET/CALL/shared queue/preserved response/submenu telemetry/unhook. Events="+n+"\r\n");
+                File.WriteAllText(path,"PASS v0.13: single-gesture menu reuse/ownership/disposal/clipboard invalidation; wake window validation; uniform foreground/luminance; Segoe UI availability; compact variable-height rows; swipe scroll without command; scroll clamping/last item; hidden submenu/back; DIB exact alpha/top-down/premultiplication; local Shell file/background menus without execution; target guards; coordinate packing; unknown verb rejection; invocation/menu state ABI; view resolution; bridge GET/CALL/shared queue/preserved response/submenu telemetry/unhook. Events="+n+"\r\n");
                 return 0;
             }
         } catch(Exception e) { File.WriteAllText(path,"FAIL: "+e+"\r\n"); return 1; }

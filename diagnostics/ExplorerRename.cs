@@ -6,13 +6,40 @@ using System.Windows.Automation;
 using System.Windows.Forms;
 
 // Exact file OR verified view background. Names/paths stay only in memory.
-internal sealed class ExplorerRename
+internal sealed class ExplorerRename : IDisposable
 {
     private IntPtr root, view;
     private Point point;
     private string folderPath, itemPath, label;
     private int[] runtimeId;
     private uint clipboardSequence;
+    private ShellCommands preparedMore;
+    public void Dispose()
+    { if(preparedMore!=null) { preparedMore.Dispose(); preparedMore=null; } }
+    private ShellCommands TakePreparedMore()
+    {
+        var menu=preparedMore; preparedMore=null;
+        if(menu!=null && clipboardSequence!=ShellCommands.GetClipboardSequenceNumber()) { menu.Dispose(); menu=null; }
+        return menu;
+    }
+    internal static void TestPreparedMore(string ownFile)
+    {
+        var cached=new ShellCommands(ownFile,false,IntPtr.Zero);
+        using(var target=new ExplorerRename { itemPath=ownFile,preparedMore=cached,clipboardSequence=ShellCommands.GetClipboardSequenceNumber() }) {
+            using(var taken=target.TakePreparedMore()) {
+                if(!Object.ReferenceEquals(cached,taken) || target.TakePreparedMore()!=null || !taken.Has("copy"))
+                    throw new Exception("Gesture menu ownership/reuse failed");
+            }
+        }
+        cached=new ShellCommands(ownFile,false,IntPtr.Zero);
+        using(var target=new ExplorerRename { itemPath=ownFile,preparedMore=cached,clipboardSequence=ShellCommands.GetClipboardSequenceNumber() ^ 1U }) {
+            if(target.TakePreparedMore()!=null || cached.Menu!=IntPtr.Zero) throw new Exception("Changed clipboard reused stale menu");
+        }
+        cached=new ShellCommands(ownFile,false,IntPtr.Zero);
+        var cancelled=new ExplorerRename { itemPath=ownFile,preparedMore=cached };
+        cancelled.Dispose(); cancelled.Dispose();
+        if(cached.Menu!=IntPtr.Zero) throw new Exception("Cancelled gesture retained Shell menu");
+    }
     internal bool Background { get { return itemPath==null; } }
     internal bool UsedNativeMenu { get; private set; }
     internal Action<string> Diagnostic;
@@ -153,16 +180,23 @@ internal sealed class ExplorerRename
         // Direct verbs target the folder object, not a detached background
         // renderer (which may incorrectly disable Paste without a view site).
         // The complete view-background menu is delegated to Explorer in More.
-        using(var commands=new ShellCommands(target.Background ? folder : target.itemPath,false,root)) {
+        var commands=new ShellCommands(target.Background ? folder : target.itemPath,false,root);
+        try {
             for(int i=0;i<6;i++) {
                 string verb=target.ActionName(i);
                 target.Enabled[i]=verb=="more" || verb=="rename" || verb=="recycle" || verb=="newfolder" || verb=="refresh" || commands.Has(verb);
             }
-        }
+            // This exact file's menu was already built for enabled-state checks.
+            // Keep it only for this gesture, in this STA, never across targets.
+            if(!target.Background) { target.preparedMore=commands; commands=null; }
+        } finally { if(commands!=null) commands.Dispose(); }
         return target;
     }
     private object Validate()
+    { object item; return Validate(out item); }
+    private object Validate(out object exactItem)
     {
+        exactItem=null;
         if(ExplorerRingNative.GetForegroundWindow()!=root || !ExplorerRingNative.IsWindow(view) ||
            ExplorerRingNative.ResolveBridgeView(unchecked((ulong)root.ToInt64()),unchecked((ulong)view.ToInt64()))!=unchecked((ulong)view.ToInt64()))
             throw new InvalidOperationException("View changed");
@@ -177,16 +211,21 @@ internal sealed class ExplorerRename
         if(!String.Equals((string)item.Path,itemPath,StringComparison.OrdinalIgnoreCase) ||
            (!File.Exists(itemPath) && !Directory.Exists(itemPath)))
             throw new InvalidOperationException("Item no longer available");
+        exactItem=item;
         return doc;
     }
     internal void Execute(int sector,IWin32Window owner)
     {
         if(sector<0 || sector>=6 || !Enabled[sector]) throw new InvalidOperationException("Disabled action");
-        dynamic doc=Validate();
+        object validatedItem;
+        var commandWatch=System.Diagnostics.Stopwatch.StartNew();
+        dynamic doc=Validate(out validatedItem);
         string verb=ActionName(sector);
         if(verb=="more") {
-            var menuWatch=System.Diagnostics.Stopwatch.StartNew();
-            if(!Background) doc.SelectItem(Match(doc,label),0x1d);
+            var menuWatch=commandWatch;
+            // Reuse the exact object from THIS validation, not a second folder
+            // enumeration by display name. No old-selection fallback.
+            if(!Background) doc.SelectItem(validatedItem,0x1d);
             else {
                 // A blank-area RMB must not show the old selected file's menu.
                 dynamic selected=doc.SelectedItems();
@@ -195,7 +234,11 @@ internal sealed class ExplorerRename
             }
             ShellCommands menu;
             Trace("MORE_TIMING stage=validatedSelected ms="+menuWatch.ElapsedMilliseconds);
-            try { menu=ViewMenu(); }
+            try {
+                menu=TakePreparedMore();
+                Trace("MORE_CONTEXT_REUSED value="+(menu!=null));
+                if(menu==null) menu=ViewMenu();
+            }
             catch(Exception e) { Trace("MORE_CONTEXT_FAILED type="+e.GetType().Name+" hr=0x"+e.HResult.ToString("X8")); ShowOriginalMenu(); return; }
             using(menu) {
                 Trace("MORE_TIMING stage=contextBuilt ms="+menuWatch.ElapsedMilliseconds);
@@ -249,7 +292,7 @@ internal sealed class ExplorerRename
             if((verb=="paste" || verb=="pastelink") && clipboardSequence!=ShellCommands.GetClipboardSequenceNumber())
                 throw new InvalidOperationException("Clipboard changed while menu open");
         } else {
-            dynamic item=Match(doc,label);
+            dynamic item=validatedItem;
             if(verb=="recycle") {
                 if(MessageBox.Show(owner,"Переместить выбранный под пальцем объект в корзину?\nЕсли Windows предупредит, что корзина недоступна, отмените операцию.",
                     "Ring menu — корзина",MessageBoxButtons.OKCancel,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.OK) throw new OperationCanceledException();
