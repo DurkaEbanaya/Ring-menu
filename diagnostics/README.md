@@ -20,7 +20,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v08.exe`; положить рядом `ExplorerBridge-v08.dll`.
+- `build-ExplorerRing.ps1`: `ExplorerRing-v09.exe`; положить рядом `ExplorerBridge-v09.dll`.
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -29,7 +29,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v08.exe --self-test
+.\ExplorerRing-v09.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -49,12 +49,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
-### Дополнительно для 0.8
+### Дополнительно для 0.9
+
+- `TestContrast`: разные светлая/тёмная части одного синтетического bitmap, линейная яркость около порога и расчёт худшего контраста 190/255 подложки. Настоящий экран в self-test/скрытых тестах не снимается. Во время пользовательского вызова ограниченный bitmap фона обрабатывается и освобождается до показа собственных поверхностей; нет сохранения/передачи/логирования пикселей.
+- Причина native fallback 0.8 воспроизведена: `ViewMenu` вернул `COMException 0x80040155` (нет зарегистрированного proxy для запрошенного интерфейса). Ничего в реестре не регистрируется. Новая версия использует локальные Shell-объекты проверенного пути. `MORE_CONTEXT_FAILED` содержит только тип/HRESULT, `TOUCH_MORE_OPEN` — источник/контекст, `TOUCH_MENU_ENUM` — уровень/число, `TOUCH_SUBMENU_FALLBACK` — HRESULT, не подписи/ID.
+- Self-test дополнительно запрашивает локальный background menu собственной временной папки, инициализирует подменю без выполнения, проверяет сохранность Shell positions при добавленном prefix, открытие/возврат локального подменю и отказ его numeric invocation. View/Sort dispatch проверен на fake automation с отказом неизвестного свойства, не на изменении настоящего окна.
+- Вручную: надписи и значки на белом/чёрном/пёстром фоне и границе окна; неподвижный цвет, читаемые disabled states; крупное «Ещё» на файле/фоне; View/Sort/Create в папке и на desktop. Локальное меню не идентично всему menu live Explorer: unsupported расширения и полный оригинал доступны через native fallback.
+
+### История 0.8
 
 - После физического теста 0.7 пользователь сообщил о прямоугольнике и непрозрачной поверхности, несмотря на `apiAccepted=True`. Сам по себе флаг не доказывает видимый эффект.
 - `TestAlphaTransport` проверяет реальные байты DIB после передачи: alpha 0/64/128, top-down расположение и premultiplication. Верхний слой не проходит через `GetHbitmap`; стандартный opaque background paint отключён. Circle backdrop использует accent blur (3) + tint/grain вместо rectangular acrylic (4), без frame extension. Список оставляет rectangular Acrylic.
 - Shell self-test читает реальные подписи/состояния своего временного файла, проверяет canonical copy, пробует инициализацию submenus без выполнения. Создаёт только скрытую поверхность списка и проверяет hit rows/отрисовку. Это не тест `IShellView.GetItemObject` реального рабочего стола/Explorer.
-- `Ещё` запрашивает live selection/background `IContextMenu` из того же Shell view. `IContextMenu2/3.HandleMenuMsg(2)` получает INITMENUPOPUP для lazy submenu. Ошибка root handler допускает чтение уже построенного root; ошибка submenu безопасно предлагает native fallback, не выполняет неинициализированную команду. Ownerdraw также не имитируется. Никаких menu labels/command IDs в журналах.
+- В 0.8 `Ещё` пыталось запросить live selection/background `IContextMenu` из того же Shell view, но на планшете возвращался native fallback. В 0.9 это заменено локальным запросом. `IContextMenu2/3.HandleMenuMsg(2)` получает INITMENUPOPUP для lazy submenu. Ошибка root handler допускает чтение уже построенного root; ошибка submenu безопасно предлагает native fallback, не выполняет неинициализированную команду. Ownerdraw также не имитируется. Никаких menu labels/command IDs в журналах.
 - Вручную повторить проверки 0.7 и дополнительно: список 44-DIP строки, страницы в обе стороны, возврат на предыдущий уровень, выбор только при UP в той же строке, отмена снаружи, 30-секундный timeout, fallback к исходному меню; «Вид/Сортировка/Создать» в папке и на desktop. Убедиться, что после списка кольцо не заблокировано на 5 секунд.
 - Во время custom menu Shell dispatch и native takeovers приостановлены, modal loop не перезапускает controller Tick. По окончании цель проверяется заново. Delete направляется в recycle/confirmation; неизвестные/не-whitelisted команды Shell требуют подтверждения (это не sandbox сторонних расширений).
 

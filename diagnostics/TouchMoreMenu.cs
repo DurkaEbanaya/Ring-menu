@@ -18,6 +18,7 @@ internal sealed partial class RingLab
     {
         using(var menu=new TouchMoreMenu(shell,point))
         using(var shield=new OutsideVeil(Screen.FromPoint(point).WorkingArea)) {
+            menu.SampleContrast();
             shield.Touched+=delegate { menu.Close(); };
             shield.MouseUp+=delegate { menu.Close(); };
             shield.Show(); menu.Show(); menu.Render();
@@ -36,9 +37,9 @@ internal sealed partial class RingLab
         private readonly RingLab painter;
         private AcrylicSurface backdrop;
         private List<ShellCommands.Entry> entries;
-        private readonly Stack<Tuple<IntPtr,int,int>> parents=new Stack<Tuple<IntPtr,int,int>>();
+        private readonly Stack<Tuple<System.Collections.Generic.List<ShellCommands.Entry>,int>> parents=new Stack<Tuple<System.Collections.Generic.List<ShellCommands.Entry>,int>>();
         private IntPtr popup;
-        private int offset,firstRow,shown,hot=-1,pressed=-1,position;
+        private int offset,firstRow,shown,hot=-1,pressed=-1;
         private Point lastPoint;
         private uint contact;
         private readonly int row,pad;
@@ -64,6 +65,14 @@ internal sealed partial class RingLab
             MouseDown+=delegate(object s,MouseEventArgs e) { pressed=HitRow(e.Location); };
             MouseUp+=delegate(object s,MouseEventArgs e) { lastPoint=e.Location; int hit=HitRow(e.Location); if(hit==pressed) SelectRow(hit); pressed=-1; };
             MouseWheel+=delegate(object s,MouseEventArgs e) { offset=Math.Max(0,Math.Min(Math.Max(0,entries.Count-shown),offset+(e.Delta<0 ? 3 : -3))); Render(); };
+        }
+        internal void SampleContrast()
+        {
+            // Explicit live-only path; hidden tests never capture the desktop.
+            painter.Bounds=Bounds; painter.center=new PointF(Width/2,Height/2);
+            painter.radius=Math.Min(Width,Height)/2; painter.inner=0;
+            painter.SampleRingContrast();
+            if(painter.contrastReady) painter.darkMaterial=painter.whiteInk[6];
         }
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams { get { var p=base.CreateParams; p.ExStyle|=0x08080080; return p; } }
@@ -109,22 +118,32 @@ internal sealed partial class RingLab
             lastPoint=new Point(0,0); SelectRow(-2);
             if(offset!=0) throw new Exception("Back page failed");
             offset=oldOffset;
+            if(entries.Count>0 && entries[0].Children!=null) {
+                var original=entries;
+                SelectRow(0);
+                if(parents.Count!=1 || entries!=original[0].Children) throw new Exception("Local submenu did not open");
+                SelectRow(-1);
+                if(parents.Count!=0 || entries!=original) throw new Exception("Local submenu back failed");
+                bool refused=false;
+                try { shell.Execute(entries[0]); } catch(InvalidOperationException) { refused=true; }
+                if(!refused) throw new Exception("Local submenu accepted as Shell numeric command");
+            }
         }
         private void SelectRow(int n)
         {
             if(n==-1) {
                 if(parents.Count==0) { Close(); return; }
-                var p=parents.Pop(); popup=p.Item1; offset=p.Item2; position=p.Item3; entries=shell.Entries(popup,position);
+                var p=parents.Pop(); entries=p.Item1; offset=p.Item2;
             } else if(n==-2) {
                 offset=Math.Max(0,Math.Min(Math.Max(0,entries.Count-shown),offset+(lastPoint.X<Width/2 ? -shown : shown)));
             } else if(n==-3) { Original=true; Close(); return; }
             else if(n>=0 && n<entries.Count) {
                 var e=entries[n]; if(!e.Enabled || e.Separator) return;
                 if(e.Unsupported) { Original=true; Close(); return; }
-                if(e.Sub!=IntPtr.Zero) {
+                if(e.Sub!=IntPtr.Zero || e.Children!=null) {
                     if(parents.Count>=8) return;
-                    var next=shell.Entries(e.Sub,n);
-                    parents.Push(Tuple.Create(popup,offset,position)); popup=e.Sub; position=n; offset=0; entries=next;
+                    var next=e.Children ?? shell.Entries(e.Sub,e.Position);
+                    parents.Push(Tuple.Create(entries,offset)); offset=0; entries=next;
                 } else { Choice=e; Close(); return; }
             }
             hot=-1; Render();
@@ -136,12 +155,14 @@ internal sealed partial class RingLab
                 Color surface=SystemInformation.HighContrast ? SystemColors.Window : painter.darkMaterial ? Color.FromArgb(38,38,38) : Color.FromArgb(243,243,243);
                 Color text=SystemInformation.HighContrast ? SystemColors.WindowText : painter.darkMaterial ? Color.White : Color.FromArgb(25,25,25);
                 g.Clear(Color.FromArgb(painter.materialBlur ? 24 : 255,surface));
+                // Stable contrast for the large list even over mixed wallpaper.
+                using(var b=new SolidBrush(Color.FromArgb(200,surface))) g.FillRectangle(b,pad,pad,Width-2*pad,Height-2*pad);
                 DrawRow(g,parents.Count==0 ? "Ещё · закрыть" : "‹ Назад",pad,text,false);
                 for(int i=0;i<shown && offset+i<entries.Count;i++) {
                     var e=entries[offset+i]; int y=firstRow+i*row;
                     if(e.Separator) { using(var pen=new Pen(Color.FromArgb(60,text))) g.DrawLine(pen,pad,y+row/2,Width-pad,y+row/2); continue; }
                     if(hot==offset+i && e.Enabled) using(var b=new SolidBrush(Color.FromArgb(70,painter.accent))) g.FillRectangle(b,pad,y,Width-2*pad,row);
-                    string name=(e.Checked ? "✓ " : "")+(String.IsNullOrEmpty(e.Text) ? "Нестандартный пункт" : e.Text.Split('\t')[0])+(e.Sub!=IntPtr.Zero ? "  ›" : "")+(e.Unsupported ? " …" : "");
+                    string name=(e.Checked ? "✓ " : "")+(String.IsNullOrEmpty(e.Text) ? "Нестандартный пункт" : e.Text.Split('\t')[0])+(e.Sub!=IntPtr.Zero || e.Children!=null ? "  ›" : "")+(e.Unsupported ? " …" : "");
                     DrawRow(g,name,y,e.Enabled ? text : SystemColors.GrayText,false);
                 }
                 DrawRow(g,"‹ Страница   "+(offset+1)+"–"+Math.Min(entries.Count,offset+shown)+" / "+entries.Count+"   Страница ›",firstRow+shown*row,text,true);

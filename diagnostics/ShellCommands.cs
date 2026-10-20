@@ -40,10 +40,14 @@ internal sealed class ShellCommands : IDisposable
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern bool GetMenuItemInfo(IntPtr menu,uint position,bool byPosition,ref MenuInfo info);
     internal sealed class Entry
     {
-        internal string Text,Verb; internal uint Id; internal IntPtr Sub;
+        internal string Text,Verb,LocalAction; internal uint Id; internal IntPtr Sub;
+        internal int Position;
+        internal List<Entry> Children;
         internal bool Enabled,Separator,Checked,Unsupported;
     }
     internal IntPtr Menu { get { return menu; } }
+    internal List<Entry> Prefix;
+    internal Action<string> Diagnostic;
     private readonly Dictionary<string,uint> commands=new Dictionary<string,uint>(StringComparer.OrdinalIgnoreCase);
     private readonly IntPtr owner;
     private static T Slot<T>(IntPtr p,int index) where T:class
@@ -110,23 +114,28 @@ internal sealed class ShellCommands : IDisposable
         else if(context2!=IntPtr.Zero) initialized=Slot<MenuMessage>(context2,6)(context2,0x117,new UIntPtr(unchecked((ulong)popup.ToInt64())),new IntPtr(position));
         // Some handlers return E_FAIL for the already-built root or for a
         // submenu they do not own. Never invoke an uninitialized lazy entry.
-        if(initialized<0 && popup!=menu) return new List<Entry> { new Entry { Text="Открыть в штатном меню…",Enabled=true,Unsupported=true } };
+        if(initialized<0 && popup!=menu) {
+            if(Diagnostic!=null) Diagnostic("TOUCH_SUBMENU_FALLBACK hr=0x"+initialized.ToString("X8"));
+            return new List<Entry> { new Entry { Text="Открыть в штатном меню…",Enabled=true,Unsupported=true } };
+        }
         int count=GetMenuItemCount(popup);
         if(count<0 || count>1024) throw new InvalidOperationException("Menu size refused");
         var entries=new List<Entry>();
+        if(popup==menu && Prefix!=null) entries.AddRange(Prefix);
         for(uint n=0;n<count;n++) {
             IntPtr text=Marshal.AllocHGlobal(2048);
             try {
                 var info=new MenuInfo { Size=(uint)Marshal.SizeOf(typeof(MenuInfo)),Mask=0x1|0x2|0x4|0x40|0x100,Text=text,Length=1023 };
                 if(!GetMenuItemInfo(popup,n,true,ref info)) throw new InvalidOperationException("Menu item unavailable");
                 string name=Marshal.PtrToStringUni(text,(int)info.Length);
-                var e=new Entry { Text=name.Replace("&&","\u0001").Replace("&","").Replace("\u0001","&"),Id=info.Id,Sub=info.Sub,
+                var e=new Entry { Position=(int)n,Text=name.Replace("&&","\u0001").Replace("&","").Replace("\u0001","&"),Id=info.Id,Sub=info.Sub,
                     Enabled=(info.State&3)==0,Checked=(info.State&8)!=0,Separator=(info.Type&0x800)!=0,
                     Unsupported=(info.Type&0x100)!=0 || (String.IsNullOrEmpty(name) && (info.Type&0x800)==0) };
                 if(e.Id>=1 && e.Id<0x8000) e.Verb=Verb(e.Id-1);
                 entries.Add(e);
             } finally { Marshal.FreeHGlobal(text); }
         }
+        if(Diagnostic!=null) Diagnostic("TOUCH_MENU_ENUM level="+(popup==menu ? "root" : "submenu")+" count="+entries.Count);
         return entries;
     }
     private string Verb(uint offset)
@@ -137,7 +146,7 @@ internal sealed class ShellCommands : IDisposable
     }
     internal void Execute(Entry entry)
     {
-        if(entry==null || !entry.Enabled || entry.Unsupported || entry.Separator || entry.Sub!=IntPtr.Zero || entry.Id<1 || entry.Id>=0x8000)
+        if(entry==null || !entry.Enabled || entry.Unsupported || entry.Separator || entry.Children!=null || entry.LocalAction!=null || entry.Sub!=IntPtr.Zero || entry.Id<1 || entry.Id>=0x8000)
             throw new InvalidOperationException("Menu command refused");
         InvokeOffset(entry.Id-1);
     }
@@ -166,6 +175,17 @@ internal sealed class ShellCommands : IDisposable
             }
             using(var commands=new ShellCommands(path,false,IntPtr.Zero)) {
                 if(!commands.Has("properties")) throw new Exception("Folder properties verb absent");
+            }
+            using(var commands=new ShellCommands(path,true,IntPtr.Zero)) {
+                var entries=commands.Entries(commands.Menu,0);
+                if(entries.Count==0) throw new Exception("Local background menu empty");
+                for(int i=0;i<entries.Count;i++) if(entries[i].Sub!=IntPtr.Zero && !entries[i].Unsupported)
+                    commands.Entries(entries[i].Sub,entries[i].Position);
+                // Prefix does not alter the Shell popup's native item positions.
+                commands.Prefix=new List<Entry> { new Entry { Text="Local test",Enabled=true,Children=new List<Entry> { new Entry { Text="Test",Enabled=true,LocalAction="test" } } } };
+                var prefixed=commands.Entries(commands.Menu,0);
+                if(prefixed.Count!=entries.Count+1 || prefixed[1].Position!=entries[0].Position) throw new Exception("Prefixed submenu position changed");
+                RingLab.TestTouchMenu(commands);
             }
         } finally { if(System.IO.File.Exists(file)) System.IO.File.Delete(file); System.IO.Directory.Delete(path); }
     }

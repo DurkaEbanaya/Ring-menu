@@ -15,6 +15,7 @@ internal sealed class ExplorerRename
     private uint clipboardSequence;
     internal bool Background { get { return itemPath==null; } }
     internal bool UsedNativeMenu { get; private set; }
+    internal Action<string> Diagnostic;
     internal string[] Labels { get; private set; }
     internal bool[] Enabled { get; private set; }
     private static readonly string[] ItemVerbs={ "open","copy","cut","rename","recycle","more" };
@@ -31,27 +32,14 @@ internal sealed class ExplorerRename
     private delegate int ActiveView(IntPtr self, out IntPtr view);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int ItemObject(IntPtr self, uint scope, ref Guid iid, [MarshalAs(UnmanagedType.IDispatch)] out object result);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int ContextObject(IntPtr self,uint scope,ref Guid iid,out IntPtr result);
     private ShellCommands ViewMenu()
     {
-        dynamic windows=Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("9BA05972-F6A8-11CF-A442-00A0C90A8F39")));
-        object shell=null;
-        string cls=ExplorerRingNative.ClassOf(root);
-        if(cls=="CabinetWClass" || cls=="ExploreWClass") {
-            int count=windows.Count;
-            for(int i=0;i<count;i++) { dynamic w=windows.Item(i); if(new IntPtr((long)w.HWND)==root) { shell=w; break; } }
-        } else { object location=0,unused=null; int hwnd; shell=windows.FindWindowSW(ref location,ref unused,8,out hwnd,1); }
-        if(shell==null) throw new InvalidOperationException("Shell window unavailable");
-        IntPtr browser=IntPtr.Zero,sv=IntPtr.Zero,context=IntPtr.Zero;
-        try {
-            Guid service=BrowserService,iid=BrowserInterface;
-            Marshal.ThrowExceptionForHR(((ServiceProvider)shell).QueryService(ref service,ref iid,out browser));
-            Marshal.ThrowExceptionForHR(Slot<ActiveView>(browser,15)(browser,out sv));
-            iid=new Guid("000214E4-0000-0000-C000-000000000046");
-            Marshal.ThrowExceptionForHR(Slot<ContextObject>(sv,15)(sv,Background ? 0U : 1U,ref iid,out context));
-            var owned=context; context=IntPtr.Zero; return new ShellCommands(owned,root);
-        } finally { if(context!=IntPtr.Zero) Marshal.Release(context); if(sv!=IntPtr.Zero) Marshal.Release(sv); if(browser!=IntPtr.Zero) Marshal.Release(browser); }
+        // IContextMenu has no usable cross-process proxy on the test machine
+        // (GetItemObject returns REGDB_E_IIDNOTREG). Build it in OUR STA from
+        // the already verified filesystem target; never register a proxy.
+        return new ShellCommands(Background ? folderPath : itemPath,Background,root);
     }
+    private void Trace(string message) { if(Diagnostic!=null) Diagnostic(message); }
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int RefreshView(IntPtr self);
     private static T Slot<T>(IntPtr p, int index) where T : class
     { return Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(Marshal.ReadIntPtr(p),index*IntPtr.Size),typeof(T)) as T; }
@@ -206,13 +194,17 @@ internal sealed class ExplorerRename
             }
             ShellCommands menu;
             try { menu=ViewMenu(); }
-            catch { ShowOriginalMenu(); return; }
+            catch(Exception e) { Trace("MORE_CONTEXT_FAILED type="+e.GetType().Name+" hr=0x"+e.HResult.ToString("X8")); ShowOriginalMenu(); return; }
             using(menu) {
+                menu.Diagnostic=Diagnostic;
+                if(Background) menu.Prefix=BackgroundEntries(doc);
+                Trace("TOUCH_MORE_OPEN context="+(Background ? "background" : "item")+" source=localShell");
                 bool original;
                 var chosen=RingLab.ShowTouchMenu(menu,point,root,out original);
                 Validate();
                 if(original) { ShowOriginalMenu(); return; }
                 if(chosen==null) return;
+                if(chosen.LocalAction!=null) { ApplyViewAction(doc,chosen.LocalAction); return; }
                 string selectedVerb=chosen.Verb ?? "";
                 if(selectedVerb=="delete" && !Background) {
                     if(MessageBox.Show(owner,"Переместить объект в корзину? Если Windows предложит безвозвратное удаление — отмените.","Ring menu",MessageBoxButtons.OKCancel,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.OK) return;
@@ -271,6 +263,52 @@ internal sealed class ExplorerRename
             commands.Execute(verb);
         }
     }
+    private static ShellCommands.Entry Local(string text,string action,bool check)
+    { return new ShellCommands.Entry { Text=text,Enabled=true,LocalAction=action,Checked=check }; }
+    private System.Collections.Generic.List<ShellCommands.Entry> BackgroundEntries(dynamic doc)
+    {
+        var prefix=new System.Collections.Generic.List<ShellCommands.Entry>();
+        // View-specific commands cannot be obtained from the detached Shell
+        // menu. Use the documented automation interface of the LIVE view.
+        try {
+            uint mode=doc.CurrentViewMode; int size=doc.IconSize;
+            var views=new System.Collections.Generic.List<ShellCommands.Entry>();
+            views.Add(Local("Крупные значки","view:1:96",mode==1 && size>=64));
+            views.Add(Local("Обычные значки","view:1:48",mode==1 && size<64));
+            views.Add(Local("Мелкие значки","view:2:16",mode==2));
+            string cls=ExplorerRingNative.ClassOf(root);
+            if(cls=="CabinetWClass" || cls=="ExploreWClass") {
+                views.Add(Local("Список","view:3:16",mode==3)); views.Add(Local("Таблица","view:4:16",mode==4));
+            }
+            prefix.Add(new ShellCommands.Entry { Text="Вид",Enabled=true,Children=views });
+        } catch { /* Unsupported automation: leave exact native menu reachable. */ }
+        try {
+            string current=doc.SortColumns;
+            var sorts=new System.Collections.Generic.List<ShellCommands.Entry>();
+            string[] labels={"Имя","Дата изменения","Тип","Размер"};
+            string[] keys={"System.ItemNameDisplay","System.DateModified","System.ItemTypeText","System.Size"};
+            for(int i=0;i<keys.Length;i++) {
+                sorts.Add(Local(labels[i]+" ↑","sort:prop:"+keys[i],current=="prop:"+keys[i]+";" || current=="prop:"+keys[i]));
+                sorts.Add(Local(labels[i]+" ↓","sort:prop:-"+keys[i],current=="prop:-"+keys[i]+";" || current=="prop:-"+keys[i]));
+            }
+            prefix.Add(new ShellCommands.Entry { Text="Сортировка",Enabled=true,Children=sorts });
+        } catch { }
+        return prefix;
+    }
+    private static void ApplyViewAction(dynamic doc,string action)
+    {
+        if(action.StartsWith("view:",StringComparison.Ordinal)) {
+            string[] parts=action.Split(':'); int mode,size;
+            if(parts.Length!=3 || !Int32.TryParse(parts[1],out mode) || !Int32.TryParse(parts[2],out size) ||
+                mode<1 || mode>4 || (size!=16 && size!=48 && size!=96)) throw new InvalidOperationException("View action refused");
+            doc.CurrentViewMode=(uint)mode; doc.IconSize=size;
+        } else if(action.StartsWith("sort:prop:",StringComparison.Ordinal)) {
+            string key=action.Substring(10).TrimStart('-');
+            if(key!="System.ItemNameDisplay" && key!="System.DateModified" && key!="System.ItemTypeText" && key!="System.Size")
+                throw new InvalidOperationException("Sort action refused");
+            doc.SortColumns=action.Substring(5);
+        } else throw new InvalidOperationException("Unknown view action");
+    }
     private void ShowOriginalMenu()
     {
         // Native Explorer builds the exact menu, including lazy extension
@@ -304,8 +342,22 @@ internal sealed class ExplorerRename
         public FakeItems Items() { return this; }
     }
     public sealed class FakeDocument { public FakeItems Folder { get; set; } }
+    public sealed class FakeView
+    {
+        public uint CurrentViewMode { get; set; }
+        public int IconSize { get; set; }
+        public string SortColumns { get; set; }
+    }
     internal static void SelfTest()
     {
+        var fakeView=new FakeView();
+        ApplyViewAction(fakeView,"view:4:16");
+        ApplyViewAction(fakeView,"sort:prop:-System.DateModified");
+        if(fakeView.CurrentViewMode!=4 || fakeView.IconSize!=16 || fakeView.SortColumns!="prop:-System.DateModified")
+            throw new Exception("Documented view action dispatch regression");
+        bool viewRefused=false;
+        try { ApplyViewAction(fakeView,"sort:prop:System.Untrusted"); } catch(InvalidOperationException) { viewRefused=true; }
+        if(!viewRefused) throw new Exception("Unknown view property accepted");
         foreach(var p in new[] { new Point(120,240),new Point(-120,-240),new Point(-1,40) }) {
             long packed=ContextCoordinates(p).ToInt64();
             if((short)(packed & 65535)!=p.X || (short)((packed>>16)&65535)!=p.Y) throw new Exception("Context coordinate packing failed");

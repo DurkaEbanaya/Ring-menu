@@ -8,10 +8,72 @@ using Microsoft.Win32;
 
 // Separate DWM backdrop and premultiplied-alpha foreground: never blur text.
 // Windows 10's AccentPolicy entry point is undocumented: failure is harmless
-// and falls back to a solid surface. No screenshots or background capture.
+// and falls back to a solid surface. Local contrast samples never leave memory.
 internal sealed partial class RingLab
 {
     private bool materialBlur, darkMaterial;
+    private readonly bool[] whiteInk=new bool[7];
+    private bool contrastReady;
+    // One bounded sample BEFORE any ring/backdrop/veil is visible. Do not
+    // resample our own surface, save pixels, or log pixel/colour values.
+    private void SampleRingContrast()
+    {
+        contrastReady=false;
+        if(SystemInformation.HighContrast) return;
+        try {
+            using(var sample=new Bitmap(Width,Height,PixelFormat.Format32bppArgb)) {
+                using(var g=Graphics.FromImage(sample)) g.CopyFromScreen(Location,Point.Empty,Size,CopyPixelOperation.SourceCopy);
+                for(int i=0;i<7;i++) {
+                    double angle=(-90+i*60)*Math.PI/180; float mid=(inner+radius)/2;
+                    float x=i==6 ? center.X : center.X+(float)Math.Cos(angle)*mid;
+                    float y=i==6 ? center.Y : center.Y+(float)Math.Sin(angle)*mid;
+                    whiteInk[i]=WhiteInkFor(sample,new Rectangle((int)(x-38*scale),(int)(y-27*scale),(int)(76*scale),(int)(54*scale)));
+                }
+            }
+            contrastReady=true;
+        } catch(System.ComponentModel.Win32Exception) { }
+          catch(System.Runtime.InteropServices.ExternalException) { }
+          catch(ArgumentException) { }
+    }
+    private static double Linear(byte value)
+    { double s=value/255.0; return s<=.04045 ? s/12.92 : Math.Pow((s+.055)/1.055,2.4); }
+    private static bool WhiteInkFor(Bitmap sample,Rectangle patch)
+    {
+        patch.Intersect(new Rectangle(Point.Empty,sample.Size));
+        if(patch.Width==0 || patch.Height==0) throw new ArgumentException("Empty contrast sample");
+        double sum=0; int count=0;
+        for(int y=patch.Top;y<patch.Bottom;y+=4) for(int x=patch.Left;x<patch.Right;x+=4) {
+            Color c=sample.GetPixel(x,y); sum+=.2126*Linear(c.R)+.7152*Linear(c.G)+.0722*Linear(c.B); count++;
+        }
+        // Pick the greater WCAG contrast against the underlying linear luma.
+        double l=sum/count; return 1.05/(l+.05)>=(l+.05)/.05;
+    }
+    private Color ReadableInk(int sector)
+    { return SystemInformation.HighContrast ? SystemColors.WindowText : (contrastReady ? whiteInk[sector] : darkMaterial) ? Color.White : Color.Black; }
+    private void ReadableBacking(Graphics g,float x,float y,float width,float height,Color ink)
+    {
+        if(SystemInformation.HighContrast) return;
+        var r=new RectangleF(x-width/2,y-height/2,width,height); float d=12*scale;
+        using(var p=new GraphicsPath()) {
+            p.AddArc(r.Left,r.Top,d,d,180,90); p.AddArc(r.Right-d,r.Top,d,d,270,90);
+            p.AddArc(r.Right-d,r.Bottom-d,d,d,0,90); p.AddArc(r.Left,r.Bottom-d,d,d,90,90); p.CloseFigure();
+            // >=4.5:1 even over an arbitrary changing backdrop, not merely an
+            // average-pixel promise. Acrylic remains visible around each label.
+            using(var b=new SolidBrush(Color.FromArgb(190,ink.R==255 ? Color.Black : Color.White))) g.FillPath(b,p);
+        }
+    }
+    internal static void TestContrast()
+    {
+        using(var b=new Bitmap(80,40)) using(var g=Graphics.FromImage(b)) {
+            g.Clear(Color.Black); g.FillRectangle(Brushes.White,40,0,40,40);
+            if(!WhiteInkFor(b,new Rectangle(0,0,40,40)) || WhiteInkFor(b,new Rectangle(40,0,40,40)))
+                throw new Exception("Per-region black/white contrast regression");
+            g.Clear(Color.FromArgb(117,117,117));
+            if(!WhiteInkFor(b,new Rectangle(0,0,80,40))) throw new Exception("Linear luminance threshold regression");
+            // Worst case: opaque white beneath a black backing, and vice versa.
+            if(1.05/(Linear(65)+.05)<4.5 || (Linear(190)+.05)/.05<4.5) throw new Exception("Backing contrast too low");
+        }
+    }
     private Color accent = Color.FromArgb(0,120,215);
     [StructLayout(LayoutKind.Sequential)] private struct Blend { internal byte Op,Flags,Alpha,Format; }
     [StructLayout(LayoutKind.Sequential)] private struct NativeSize { internal int X,Y; }
@@ -150,13 +212,18 @@ internal sealed partial class RingLab
             }
             double angle=(-90+i*60)*Math.PI/180; float mid=(inner+radius)/2;
             float x=center.X+(float)Math.Cos(angle)*mid, y=center.Y+(float)Math.Sin(angle)*mid;
-            Color ink=enabled[i] ? (hc && hover==i ? SystemColors.HighlightText : text) : SystemColors.GrayText;
+            Color ink=hc ? (hover==i ? SystemColors.HighlightText : SystemColors.WindowText) : ReadableInk(i);
+            using(var f=new Font("Segoe UI",(names[i].Length>12 ? 10 : 11)*scale,FontStyle.Regular,GraphicsUnit.Pixel))
+                ReadableBacking(g,x,y+2*scale,Math.Max(44*scale,g.MeasureString(names[i],f).Width+12*scale),57*scale,ink);
+            if(!enabled[i]) ink=Color.FromArgb(145,ink);
             DrawFluentIcon(g,names[i],x,y-11*scale,ink);
             DrawText(g,names[i],x,y+15*scale,names[i].Length>12 ? 10 : 11,ink,true);
         }
         using(var pen=new Pen(Color.FromArgb(hc ? 255 : 80,text),scale)) g.DrawEllipse(pen,disk);
-        DrawText(g,contextLabel,center.X,center.Y-9*scale,14,text,true);
-        DrawText(g,"Отмена",center.X,center.Y+13*scale,11,hc ? text : darkMaterial ? Color.Silver : Color.DimGray,true);
+        Color centerInk=ReadableInk(6);
+        ReadableBacking(g,center.X,center.Y+2*scale,70*scale,49*scale,centerInk);
+        DrawText(g,contextLabel,center.X,center.Y-9*scale,14,centerInk,true);
+        DrawText(g,"Отмена",center.X,center.Y+13*scale,11,centerInk,true);
     }
     private void DrawFluentIcon(Graphics g,string name,float x,float y,Color color)
     {
