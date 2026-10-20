@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
-$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v011.exe'))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $PSScriptRoot 'ExplorerRing-v012.exe'))
 $flags = [Reflection.BindingFlags]'Instance,NonPublic'
 $static = [Reflection.BindingFlags]'Static,NonPublic'
 $type = $assembly.GetType('RingLab', $true)
@@ -90,14 +90,24 @@ try {
     $null=$form.Handle
     Invoke-Method 'PresentOverlay' @() | Out-Null
     $frame=Get-Field 'ringFrame'
+    $glow=Get-Field 'revealFill'
+    $paths=Get-Field 'sectorCache'
+    $clip=Get-Field 'revealClip'
+    Assert ($null -ne $glow -and $paths.Length -eq 6) 'Reveal cache missing'
+    Assert (-not $clip.IsVisible([single]320,[single]114)) 'Disabled sector leaked into Reveal clip'
+    Assert ($clip.IsVisible([single]498.4,[single]423)) 'Enabled sector missing from Reveal clip'
+    Assert (-not $clip.IsVisible([single]320,[single]320)) 'Reveal clip covered cancel center'
     Assert ($null -ne $frame) 'Persistent frame not allocated'
     Invoke-Method 'PresentOverlay' @() | Out-Null
     Assert ([object]::ReferenceEquals($frame,(Get-Field 'ringFrame'))) 'Unchanged frame reallocated'
     Set-Field 'last' ([Drawing.PointF]::new(350,150))
     Invoke-Method 'PresentOverlay' @() | Out-Null
     Assert ([object]::ReferenceEquals($frame,(Get-Field 'ringFrame'))) 'MOVE reallocated frame'
+    Assert ([object]::ReferenceEquals($glow,(Get-Field 'revealFill'))) 'MOVE rebuilt Reveal gradient'
+    Assert ([object]::ReferenceEquals($paths[0],(Get-Field 'sectorCache')[0])) 'MOVE rebuilt sector geometry'
     Invoke-Method 'ClearRingCache' @() | Out-Null
     Assert ($null -eq (Get-Field 'ringFrame')) 'Frame cache cleanup failed'
+    Assert ($null -eq (Get-Field 'revealFill') -and $null -eq (Get-Field 'sectorCache') -and $null -eq (Get-Field 'revealClip')) 'Reveal cache cleanup failed'
     Invoke-Method 'PresentOverlay' @() | Out-Null
     Assert (-not $form.Visible) 'Layered surface test showed a window'
     Invoke-Method 'Cancel' @('test') | Out-Null

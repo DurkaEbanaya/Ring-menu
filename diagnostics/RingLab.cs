@@ -40,7 +40,8 @@ internal sealed partial class RingLab : Form
     private string message = "Удержите палец на любом значке файла.";
     private RectangleF close;
 
-    private RingLab()
+    private RingLab() : this(true) { }
+    private RingLab(bool writeLog)
     {
         Text = "Ring Lab — тест жестов, без операций с файлами";
         AutoScaleMode = AutoScaleMode.None;
@@ -50,8 +51,8 @@ internal sealed partial class RingLab : Form
         BackColor = Color.FromArgb(239, 243, 247);
         DoubleBuffered = true;
         KeyPreview = true;
-        log = new StreamWriter(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-            "ring-lab-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log"), false, System.Text.Encoding.UTF8);
+        log = writeLog ? new StreamWriter(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+            "ring-lab-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log"), false, System.Text.Encoding.UTF8) : new StreamWriter(Stream.Null);
         log.AutoFlush = true;
         Shown += delegate {
             scale = GetDpiForWindow(Handle) / 96f;

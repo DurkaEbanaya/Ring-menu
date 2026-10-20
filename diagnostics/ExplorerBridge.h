@@ -11,11 +11,17 @@ API PTR GetForegroundWindow(void);
 API U32 GetDpiForWindow(PTR);
 API U32 GetWindowThreadProcessId(PTR, U32 *);
 API U32 GetCurrentProcessId(void);
+API I32 PostMessageW(PTR, U32, U64, I64);
 static BRIDGE_POLICY policy;
 static U32 tailUntil, tailId, ownedAt;
 static PTR ownedWindow;
 static U64 policyRoot;
-static U32 lastBridgeMove, lastSuppressedMove;
+static U32 lastSuppressedMove;
+static void notifyBridge(SHARED *s) {
+    if (s->notifyWindow && __sync_val_compare_and_swap(&s->notifyPending, 0, 1) == 0)
+        if (!PostMessageW((PTR)s->notifyWindow, 0x8053, 0, 0))
+            __sync_lock_release(&s->notifyPending); /* Timer remains a fallback. */
+}
 EXPORT U64 ResolveBridgeView(U64 root, U64 hwnd) {
     PTR h = (PTR)hwnd;
     if (!root || !h || GetAncestor(h, 2) != (PTR)root) return 0;
@@ -42,13 +48,8 @@ static int liveBridge(SHARED *s, U32 now) {
 }
 static void bridgeEvent(U32 kind, PTR hwnd, U32 id, U32 flags, I32 x, I32 y, U32 now) {
     SHARED *s = shared;
-    /* Coordinates at touch-screen refresh rate suffice for hover. The real
-     * UP position is always sent unthrottled and decides the final selection. */
-    if (kind == 1) lastBridgeMove = now - 16;
-    if (kind == 2 && !(flags & 0x8000)) {
-        if (now - lastBridgeMove < 16) return;
-        lastBridgeMove = now;
-    }
+    /* Queue already coalesces adjacent MOVE. Never discard the newest sample
+     * with a coarse GetTickCount throttle; UP/cancel retain their exact order. */
     int diagnostic = kind == 5 || kind == 6 || kind == 7;
     if (kind == 5 && flags == 0x200) {
         if (now - lastSuppressedMove < 60) return;
@@ -68,6 +69,7 @@ static void bridgeEvent(U32 kind, PTR hwnd, U32 id, U32 flags, I32 x, I32 y, U32
         else __sync_fetch_and_add(&s->dropped, 1);
     }
     unlock(&s->lock);
+    if (!diagnostic) notifyBridge(s);
 }
 static void bridgeMessage(MSG *m) {
     SHARED *s = connect();

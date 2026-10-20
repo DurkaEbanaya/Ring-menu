@@ -21,6 +21,20 @@ EXPORT U32 BridgePulse(U32 enabled) {
 EXPORT U32 BridgeDiagnosticDrops(void) {
     return shared ? shared->diagnosticDropped : 0;
 }
+EXPORT U32 SetBridgeNotify(U64 window) {
+    U32 pid = 0;
+    if (!shared || (window && (!GetWindowThreadProcessId((PTR)window, &pid) || pid != GetCurrentProcessId()))) return 87;
+    shared->notifyWindow = window;
+    return 0;
+}
+/* Isolated transport regression only: never callable for an Explorer bridge. */
+EXPORT U32 TestBridgeWake(U64 window) {
+    if (!shared || shared->root || shared->thread != GetCurrentThreadId() || !window || SetBridgeNotify(window)) return 87;
+    bridgeEvent(2, (PTR)window, 123, 4, 10, 20, GetTickCount());
+    bridgeEvent(2, (PTR)window, 123, 4, 30, 40, GetTickCount());
+    bridgeEvent(3, (PTR)window, 123, 0, 50, 60, GetTickCount());
+    return 0;
+}
 /* Retarget only between complete contacts. Keep the original session deadline
  * and exclusive mapping; desktop and folder views can use different threads. */
 EXPORT U32 RetargetBridge(U32 thread, U64 root, U64 view) {

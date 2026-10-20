@@ -15,14 +15,34 @@ internal sealed partial class RingLab
     private bool whiteInk;
     private bool contrastReady;
     private Bitmap ringBase,ringLabels;
+    private Bitmap revealFill;
+    private GraphicsPath[] sectorCache;
+    private GraphicsPath revealClip;
     private LayeredFrame ringFrame;
     private PointF presentedPoint;
     private int presentedHover;
     private uint presentedContact;
     private bool presentedWait,framePresented;
     private int renderPass;
+    internal static void WarmRenderer()
+    {
+        // Pay JIT/GDI+ initialization before arming, never at first gesture.
+        // Own hidden surface only: no Explorer, screen sample, or commands.
+        using(var f=CreateOverlayCore(false)) {
+            try {
+                f.ClientSize=new Size(630,630); f.scale=2; f.radius=296; f.inner=116;
+                f.center=new PointF(315,315); f.last=new PointF(315,109);
+                f.visibleRing=true; f.active=123; f.materialBlur=true;
+                var handle=f.Handle; f.PresentOverlay();
+                if(f.Visible) throw new InvalidOperationException("Renderer warmup showed a window");
+            } finally { f.ClearRingCache(); f.log.Dispose(); }
+        }
+    }
     private void ClearRingCache()
     {
+        if(revealFill!=null) { revealFill.Dispose(); revealFill=null; }
+        if(sectorCache!=null) { foreach(var path in sectorCache) path.Dispose(); sectorCache=null; }
+        if(revealClip!=null) { revealClip.Dispose(); revealClip=null; }
         if(ringBase!=null) { ringBase.Dispose(); ringBase=null; }
         if(ringLabels!=null) { ringLabels.Dispose(); ringLabels=null; }
         if(ringFrame!=null) { ringFrame.Dispose(); ringFrame=null; }
@@ -47,14 +67,26 @@ internal sealed partial class RingLab
     }
     private static double Linear(byte value)
     { double s=value/255.0; return s<=.04045 ? s/12.92 : Math.Pow((s+.055)/1.055,2.4); }
+    private static readonly double[] linearLuma=BuildLinearLuma();
+    private static double[] BuildLinearLuma()
+    { var values=new double[256]; for(int i=0;i<256;i++) values[i]=Linear((byte)i); return values; }
     private static bool WhiteInkFor(Bitmap sample,Rectangle patch)
     {
         patch.Intersect(new Rectangle(Point.Empty,sample.Size));
         if(patch.Width==0 || patch.Height==0) throw new ArgumentException("Empty contrast sample");
         double sum=0; int count=0;
-        for(int y=patch.Top;y<patch.Bottom;y+=4) for(int x=patch.Left;x<patch.Right;x+=4) {
-            Color c=sample.GetPixel(x,y); sum+=.2126*Linear(c.R)+.7152*Linear(c.G)+.0722*Linear(c.B); count++;
-        }
+        // Same pixels and linear-light rule, but no GetPixel interop and no
+        // repeated pow() for every sample while the user waits for the menu.
+        var data=sample.LockBits(new Rectangle(Point.Empty,sample.Size),ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb);
+        try {
+            var row=new byte[patch.Width*4];
+            for(int y=patch.Top;y<patch.Bottom;y+=4) {
+                Marshal.Copy(IntPtr.Add(data.Scan0,y*data.Stride+patch.Left*4),row,0,row.Length);
+                for(int x=0;x<patch.Width;x+=4) {
+                    int p=x*4; sum+=.2126*linearLuma[row[p+2]]+.7152*linearLuma[row[p+1]]+.0722*linearLuma[row[p]]; count++;
+                }
+            }
+        } finally { sample.UnlockBits(data); }
         // Pick the greater WCAG contrast against the underlying linear luma.
         double l=sum/count; return 1.05/(l+.05)>=(l+.05)/.05;
     }
@@ -79,6 +111,14 @@ internal sealed partial class RingLab
             }
             g.Clear(Color.FromArgb(117,117,117));
             if(!WhiteInkFor(b,new Rectangle(0,0,80,40))) throw new Exception("Linear luminance threshold regression");
+            double sum=0; int count=0;
+            var patch=new Rectangle(3,5,61,29);
+            for(int y=patch.Top;y<patch.Bottom;y+=4) for(int x=patch.Left;x<patch.Right;x+=4) {
+                var c=Color.FromArgb(x*3,y*6,(x+y)*2); b.SetPixel(x,y,c);
+                sum+=.2126*Linear(c.R)+.7152*Linear(c.G)+.0722*Linear(c.B); count++;
+            }
+            double mean=sum/count;
+            if(WhiteInkFor(b,patch)!=(1.05/(mean+.05)>=(mean+.05)/.05)) throw new Exception("Row luminance differs from pixel reference");
         }
     }
     private Color accent = Color.FromArgb(0,120,215);
@@ -122,6 +162,7 @@ internal sealed partial class RingLab
             ringFrame=new LayeredFrame(Width,Height);
             ringBase=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb);
             ringLabels=new Bitmap(Width,Height,PixelFormat.Format32bppPArgb);
+            BuildRevealCache();
             try {
                 renderPass=1; using(var g=Graphics.FromImage(ringBase)) { SetupGraphics(g); DrawFluentRing(g); }
                 renderPass=2; using(var g=Graphics.FromImage(ringLabels)) { SetupGraphics(g); DrawFluentRing(g); }
@@ -136,13 +177,49 @@ internal sealed partial class RingLab
         graphics.CompositingMode=CompositingMode.SourceCopy;
         graphics.DrawImageUnscaled(ringBase,0,0);
         graphics.CompositingMode=CompositingMode.SourceOver;
-        try { renderPass=3; DrawFluentRing(graphics); } finally { renderPass=0; }
+        DrawCachedReveal(graphics);
         graphics.DrawImageUnscaled(ringLabels,0,0);
         ringFrame.Present(Handle,Location);
         RememberFrame();
     }
     private void RememberFrame()
     { presentedPoint=last; presentedHover=hover; presentedContact=active; presentedWait=waitInitialUp; framePresented=true; }
+    private void BuildRevealCache()
+    {
+        sectorCache=new GraphicsPath[6]; revealClip=new GraphicsPath();
+        for(int i=0;i<6;i++) {
+            sectorCache[i]=SectorPath(i);
+            if(enabled[i]) revealClip.AddPath(sectorCache[i],false);
+        }
+        float r=94*scale; int size=(int)Math.Ceiling(2*r)+4;
+        revealFill=new Bitmap(size,size,PixelFormat.Format32bppPArgb);
+        var c=new PointF(size/2f,size/2f);
+        using(var g=Graphics.FromImage(revealFill)) using(var glow=new GraphicsPath()) {
+            SetupGraphics(g); glow.AddEllipse(c.X-r,c.Y-r,2*r,2*r);
+            using(var b=new PathGradientBrush(glow)) {
+                b.CenterPoint=c; b.CenterColor=Color.FromArgb(76,accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
+                g.FillPath(b,glow);
+            }
+        }
+    }
+    private void DrawCachedReveal(Graphics g)
+    {
+        if(hover>=0 && hover<6) using(var b=new SolidBrush(Color.FromArgb(65,accent))) g.FillPath(b,sectorCache[hover]);
+        if(active==0 || waitInitialUp) return;
+        var state=g.Save();
+        try {
+            g.SetClip(revealClip,CombineMode.Intersect);
+            g.DrawImageUnscaled(revealFill,(int)Math.Round(last.X-revealFill.Width/2f),(int)Math.Round(last.Y-revealFill.Height/2f));
+        } finally { g.Restore(state); }
+        // One shared border gradient, not six separate paths/brushes per frame.
+        using(var glow=new GraphicsPath()) {
+            float r=110*scale; glow.AddEllipse(last.X-r,last.Y-r,2*r,2*r);
+            using(var b=new PathGradientBrush(glow)) {
+                b.CenterPoint=last; b.CenterColor=Color.FromArgb(230,accent); b.SurroundColors=new[] { Color.FromArgb(0,accent) };
+                using(var pen=new Pen(b,1.6f*scale)) g.DrawPath(pen,revealClip);
+            }
+        }
+    }
     private static void SetupGraphics(Graphics g)
     { g.SmoothingMode=SmoothingMode.AntiAlias; g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit; }
     // Persistent DIB is also the GDI+ render target: no per-frame bitmap/DC,

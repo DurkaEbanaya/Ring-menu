@@ -20,7 +20,7 @@
 ## Сборка
 
 - `bash build-observer.sh`: SDK-free Windows x64 native DLL + локальные C-тесты политики.
-- `build-ExplorerRing.ps1`: `ExplorerRing-v011.exe`; положить рядом неизменённую `ExplorerBridge-v09.dll` (0.11 — только UI-исправление).
+- `build-ExplorerRing.ps1`: `ExplorerRing-v012.exe`; положить рядом `ExplorerBridge-v012.dll`. В 0.12 изменён также native transport, смешивать версии нельзя.
 - `build-ExplorerProbe.ps1`: пассивный Explorer Probe.
 - `build.ps1`: Touch Probe и автономный Ring Lab.
 
@@ -29,7 +29,7 @@
 ## Автотесты
 
 ```powershell
-.\ExplorerRing-v011.exe --self-test
+.\ExplorerRing-v012.exe --self-test
 Get-Content .\explorer-bridge-self-test.log
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-ExplorerRing.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
@@ -49,7 +49,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-RingLab.ps1
 - `NATIVE_MENU_ENTER/EXIT`, `MORE_POPUP_INIT` подтверждают наблюдение menu loop и инициализации popup, не успешное выполнение команды. `itemsBeforeHandler` — количество **до** обработки сообщения Explorer: ленивое подменю может заполниться позже. Имена пунктов и их command IDs не читаются/не логируются. `MORE_UNCONFIRMED` означает отсутствие наблюдаемого входа за 5 секунд, не диагноз конкретной причины.
 - Запрет нового захвата во время меню проверяется напрямую через `GetGUIThreadInfo` (`GUI_INMENUMODE/GUI_SYSTEMMENUMODE/GUI_POPUPMENUMODE`); диагностические ENTER/EXIT не управляют блокировкой. При отказе запроса состояния эксперимент останавливается. ABI и запрос состояния проверяются self-test.
 
-### Дополнительно для 0.11
+### Дополнительно для 0.12
+
+- Градиент заливки Reveal и геометрия секторов кэшируются на время кольца; общий border gradient создаётся один раз на кадр вместо шести. Disabled-сектора и центр исключены из clip. Высокий контраст сохраняет прежнюю полную отрисовку. Прозрачность, шрифт, один цвет и отсутствие подложек сохранены.
+- Native producer отправляет coalesced `PostMessage`-уведомление, не ждёт ответа UI. Уведомление — только сигнал прочитать очередь, не источник координат/команд. Controller проверяет потери и таймауты до действия, защищён от повторного входа. 10-мс timer остаётся резервом; heartbeat/3 минуты/UP/cancel safety не отменены. Грубый 16-мс MOVE throttle убран, соседние MOVE объединяются самой очередью; UP остаётся точным. Это требует физической проверки нагрузки/стабильности, не обещание частоты FPS.
+- Notify HWND проверяется на принадлежность процессу. Self-test добавлен для двух последовательных wake batches и частичного drain/repost с сохранением MOVE→UP. Не соединяется с Explorer. Geometry test дополнен переиспользованием/очисткой Reveal cache и исключением disabled/center.
+- Выбор чёрного/белого использует те же пиксели и линейную формулу, но читает строки через LockBits и таблицу 256 значений вместо GetPixel/pow на каждый пиксель. Проверяется против попиксельного эталона. Ничего не снимается дополнительно и не сохраняется.
+- «Ещё» ожидает ввод через MsgWaitForMultipleObjectsEx, не безусловный Sleep(10); Shell/UIA всё ещё синхронны. Журнал сбрасывается раз в 250 мс и при остановке, не каждый UI tick; при аварии возможна потеря последних буферизованных записей.
+- `Measure-Rendering.ps1` по умолчанию использует 0.12; дополнительно измеряет первый кадр, пять повторных открытий и synthetic contrast без захвата экрана. На тестовом планшете 60 кадров: 0.11 mean 8.54 / median 8.34 / p95 9.64 мс; финальная 0.12 mean 5.78 / median 5.49 / p95 7.29 мс. Synthetic contrast: 9.02 → 0.13 мс. Это скрытый rendering benchmark, не физическая touch/display latency.
+- Обнаруженная регрессия холодного первого renderer-вызова (~220 мс до прогрева) не скрыта: добавлен startup WarmRenderer на собственной невидимой поверхности без записи лога, sampling и Shell. Прогрев до подключения, все ресурсы освобождаются. В финальном замере startup warmup 42.30 мс, первый render 40.95 мс, повторное создание 35.89 мс; эти этапы не включены в warmed frame mean. Shell build в финальном запуске cold 220.37 / warm 47.59 и 46.24 мс: достоверного ускорения самого Shell не заявляется.
+- Финальная сборка без предупреждений, --self-test (в том числе coalesced wake/rearm/partial drain), 49 placements/294 hits и Reveal cache guards пройдены на Windows. Изолированный session-0 copy/cut/paste пройден без изменения console clipboard. Живой transport без MOVE throttle, внешний вид и end-to-end отзывчивость требуют проверки пользователем.
+
+### История 0.11
 
 - `Measure-Rendering.ps1 -Executable ExplorerRing-v011.exe`: скрытая собственная поверхность 630×630, 30 изменяющихся кадров после warmup, mean/median/p95. Экран не снимается, Explorer не подключается. Затем query меню собственного временного файла три раза, без выполнения команд; файл/папка удаляются. Сравнивать версии в отдельных процессах, учитывая прогрев Shell caches. В одном сеансе 0.10 mean 34.06 / median 33.24 / p95 37.71 мс; 0.11 mean 8.45 / median 8.44 / p95 8.63 мс. Это не физический display/input latency и не обещание 120 FPS.
 - Кэш фона/надписей освобождается при закрытии/смене кольца; DIB/DC переиспользуются. Проверка `Test-ExplorerRing` дополнена повторным кадром/MOVE без reallocation, очисткой/пересозданием кэша. High contrast рисуется целиком, чтобы hover highlight text не застывал. Геометрия, единый цвет, отсутствие подложек и команды сохранены.

@@ -15,8 +15,10 @@ internal sealed partial class RingLab
     internal bool OverlayVisible { get { return visibleRing; } }
     internal uint OverlayContact { get { return active; } }
     internal static RingLab CreateOverlay()
+    { return CreateOverlayCore(true); }
+    private static RingLab CreateOverlayCore(bool writeLog)
     {
-        var f = new RingLab();
+        var f = new RingLab(writeLog);
         f.integrated = true;
         f.timer.Stop();
         f.Text = "Explorer Ring";

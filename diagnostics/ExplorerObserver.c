@@ -34,6 +34,8 @@ typedef struct {
     U64 root, view;
     U32 heartbeat, owned, generation, enabled;
     U32 diagnosticDropped;
+    U64 notifyWindow;
+    volatile I32 notifyPending;
 #endif
 } SHARED;
 _Static_assert(sizeof(MSG) == 48, "MSG x64 ABI");
@@ -187,7 +189,16 @@ EXPORT U32 DrainObservation(EVENT *output, U32 capacity, U32 *dropped) {
         output[count++] = s->events[s->read % 512]; s->read++;
     }
     *dropped = s->dropped;
+#ifdef EXPLORER_BRIDGE
+    /* Ack under the queue lock: producer cannot enqueue between empty check
+     * and acknowledgement. Repost if a bounded drain left queued records. */
+    __sync_lock_release(&s->notifyPending);
+    int more = s->read != s->write;
+#endif
     unlock(&s->lock);
+#ifdef EXPLORER_BRIDGE
+    if (more) notifyBridge(s);
+#endif
     return count;
 }
 EXPORT I32 ObserverClass(U64 hwnd, WCHAR *name, I32 capacity) {

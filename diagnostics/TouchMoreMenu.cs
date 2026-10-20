@@ -30,7 +30,10 @@ internal sealed partial class RingLab
             DateTime until=DateTime.UtcNow.AddSeconds(30);
             try {
                 while(menu.Visible && DateTime.UtcNow<until && ExplorerRingNative.GetForegroundWindow()==root) {
-                    Application.DoEvents(); System.Threading.Thread.Sleep(10);
+                    Application.DoEvents();
+                    // Wake as soon as input arrives instead of sleeping through
+                    // the next touch sample. Timeout retains focus/deadline checks.
+                    ExplorerRingNative.MsgWaitForMultipleObjectsEx(0,IntPtr.Zero,10,0x04ff,4);
                 }
                 original=menu.Original; return menu.Choice;
             } finally { menu.Close(); shield.Close(); }
